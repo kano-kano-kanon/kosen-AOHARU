@@ -150,6 +150,15 @@ class GameState {
         effect: { maxHP: 10, maxSP: 10, hp: 10, sp: 10 },
         category: 'rare',
         icon: '🍀'
+      },
+      {
+        id: 'super_pen',
+        name: '万年筆',
+        description: '論理力+10、提出力+10',
+        price: 1500,
+        effect: { theory: 10, submission: 10 },
+        category: 'rare',
+        icon: '🖋'
       }
     ];
     this.purchasedItems = []; // 購入履歴
@@ -158,6 +167,9 @@ class GameState {
     this.autoSaveEnabled = true;
     this.lastAutoSave = 0;
     this.autoSaveInterval = 30000; // 30秒間隔
+    
+    // 章の初期化（chapterGoalsを確実に設定）
+    this.initializeChapter(this.currentChapter);
     
     // 初期化時にオートセーブからロードを試行
     this.attemptAutoLoad();
@@ -441,7 +453,8 @@ class GameState {
       isAdmin: this.isAdmin,
       purchasedItems: this.purchasedItems,
       chapterProgress: this.chapterProgress,
-      chapterEvents: this.chapterEvents
+      chapterEvents: this.chapterEvents,
+      chapterGoals: this.chapterGoals
     };
   }
 
@@ -460,6 +473,13 @@ class GameState {
     this.purchasedItems = saveData.purchasedItems || [];
     this.chapterProgress = saveData.chapterProgress || 0;
     this.chapterEvents = saveData.chapterEvents || null;
+    this.chapterGoals = saveData.chapterGoals || {};
+    
+    // chapterEventsまたはchapterGoalsが存在しない場合、現在の章で再初期化
+    if (!this.chapterEvents || !this.chapterGoals || Object.keys(this.chapterGoals).length === 0) {
+      console.log('章データが不完全なため再初期化します');
+      this.initializeChapter(this.currentChapter);
+    }
   }
 
   // 章システム
@@ -532,8 +552,16 @@ class GameState {
 
   // 章イベント進行
   getCurrentChapterEvent() {
-    if (!this.chapterEvents) return null;
-    return this.chapterEvents.find(event => !event.completed);
+    if (!this.chapterEvents) {
+      console.log('getCurrentChapterEvent: chapterEventsが存在しません');
+      return null;
+    }
+    
+    const uncompletedEvent = this.chapterEvents.find(event => !event.completed);
+    console.log('getCurrentChapterEvent: 未完了イベント検索結果:', uncompletedEvent?.id || 'なし');
+    console.log('全イベント状態:', this.chapterEvents.map(e => ({ id: e.id, completed: e.completed })));
+    
+    return uncompletedEvent;
   }
 
   // イベント要件チェック
@@ -569,11 +597,18 @@ class GameState {
 
   // 章イベント完了
   completeChapterEvent(eventId) {
-    if (!this.chapterEvents) return;
+    if (!this.chapterEvents) {
+      console.log('警告: chapterEventsが存在しません');
+      return;
+    }
     const event = this.chapterEvents.find(e => e.id === eventId);
     if (event) {
+      console.log(`イベント完了処理: ${eventId}, 前の状態: completed=${event.completed}`);
       event.completed = true;
       this.chapterProgress++;
+      console.log(`イベント完了後: completed=${event.completed}, chapterProgress=${this.chapterProgress}`);
+    } else {
+      console.log(`警告: イベント ${eventId} が見つかりません`);
     }
   }
 
@@ -590,6 +625,14 @@ class GameState {
   // バトル終了処理
   endBattle(result, rewards = {}) {
     this.gamePhase = 'daily';
+    
+    // バトル終了時のHP/SP更新
+    if (rewards.finalPlayerHP !== undefined) {
+      this.playerStats.hp = Math.max(0, rewards.finalPlayerHP);
+    }
+    if (rewards.finalPlayerSP !== undefined) {
+      this.playerStats.sp = Math.max(0, rewards.finalPlayerSP);
+    }
     
     if (result === 'victory') {
       // 勝利報酬
@@ -783,16 +826,16 @@ class GameState {
     
     this.playerStats = {
       ...this.playerStats,
-      hp: 999,
-      sp: 999,
-      submission: 999,
-      theory: 999,
-      social: 999,
+      hp: 1024,
+      sp: 1024,
+      submission: 1024,
+      theory: 1024,
+      social: 1024,
       stress: 0,
       money: 999999,
-      level: 99,
-      maxHP: 999,
-      maxSP: 999
+      level: 1024,
+      maxHP: 1024,
+      maxSP: 1024
     };
     return true;
   }
@@ -942,7 +985,7 @@ class GameState {
     }
 
     // 章固有の要件チェック
-    const goals = this.chapterGoals;
+    const goals = this.chapterGoals || {};
     const missing = [];
 
     if (goals.requiredCredits && this.playerStats.submission < goals.requiredCredits * 30) {
@@ -977,10 +1020,22 @@ class GameState {
       return { success: false, message: advanceCheck.message };
     }
 
+    // 次章が存在するかチェック
+    const nextChapter = this.currentChapter + 1;
+    const availableChapters = [1, 2]; // 実装済みの章番号
+    
+    if (!availableChapters.includes(nextChapter)) {
+      return { 
+        success: false, 
+        message: `第${nextChapter}章はまだ実装されていません。\n現在は第${Math.max(...availableChapters)}章までプレイ可能です。\n\nゲームをお楽しみいただき、ありがとうございました！` 
+      };
+    }
+
     // レベルアップボーナス（章クリア報酬）
     const chapterBonus = {
       1: { exp: 500, money: 2000, maxHP: 20, maxSP: 30 },
-      2: { exp: 800, money: 3500, maxHP: 30, maxSP: 40 }
+      2: { exp: 800, money: 3500, maxHP: 30, maxSP: 40 },
+      3: { exp: 900, money: 4000, maxHP: 60, maxSP: 48 }
     };
 
     const bonus = chapterBonus[this.currentChapter];
@@ -991,7 +1046,7 @@ class GameState {
     }
 
     // 次章初期化
-    this.currentChapter += 1;
+    this.currentChapter = nextChapter;
     this.currentWeek = 1;
     this.initializeChapter(this.currentChapter);
 
@@ -1053,7 +1108,7 @@ class GameState {
         name: '親切な先輩',
         description: '先輩からアドバイスをもらえました',
         probability: 0.12,
-        effect: { theory: 1, social: 1 },
+        effect: { theory: 4, social: 1 },
         message: '先輩から勉強のコツを教えてもらいました！'
       },
       {
@@ -1061,7 +1116,7 @@ class GameState {
         name: '悪天候',
         description: '雨で疲れが溜まりました',
         probability: 0.08,
-        effect: { stress: 3, sp: -5 },
+        effect: { stress: 3, sp: -5, social: 2 },
         message: '雨でびしょ濡れに...少し疲れました'
       },
       {

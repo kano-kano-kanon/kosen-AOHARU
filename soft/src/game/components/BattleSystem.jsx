@@ -8,6 +8,8 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
   const [battleState, setBattleState] = React.useState({
     playerHP: playerStats?.hp || 100,
     playerSP: playerStats?.sp || 100,
+    playerMaxHP: playerStats?.maxHP || 100,
+    playerMaxSP: playerStats?.maxSP || 100,
     enemyHP: enemy?.maxHP || 50,
     enemyMaxHP: enemy?.maxHP || 50,
     turn: 1,
@@ -102,7 +104,9 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
           const expBonus = newState.isFinalExam ? newState.round * 50 : 0; // 期末試験はラウンドボーナス
           onBattleEnd('victory', {
             exp: (enemy?.expReward || 50) + expBonus,
-            submissionBonus: enemy?.submissionBonus || 2
+            submissionBonus: enemy?.submissionBonus || 2,
+            finalPlayerHP: newState.playerHP,
+            finalPlayerSP: newState.playerSP
           });
         } else {
           console.log('警告：onBattleEndが定義されていません');
@@ -167,7 +171,11 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
       
       // 即座に敗北処理を呼び出す（setTimeout削除）
       if (onBattleEnd) {
-        onBattleEnd('defeat', { stressPenalty: 10 });
+        onBattleEnd('defeat', { 
+          stressPenalty: 10,
+          finalPlayerHP: newState.playerHP,
+          finalPlayerSP: newState.playerSP
+        });
       }
       return; // 早期リターンで以降の処理をスキップ
     } else {
@@ -179,6 +187,7 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
 
   // 逃走
   const runAway = () => {
+    const currentState = battleState;
     setBattleState(prev => ({
       ...prev,
       phase: 'escape',
@@ -187,7 +196,11 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
     
     // 即座に逃走処理を呼び出す（setTimeout削除）
     if (onBattleEnd) {
-      onBattleEnd('escape', { stressPenalty: 5 });
+      onBattleEnd('escape', { 
+        stressPenalty: 5,
+        finalPlayerHP: currentState.playerHP,
+        finalPlayerSP: currentState.playerSP
+      });
     }
   };
 
@@ -243,7 +256,7 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
           <div style={{ marginBottom: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>HP:</span>
-              <span>{battleState.playerHP}/100</span>
+              <span>{battleState.playerHP}/{battleState.playerMaxHP}</span>
             </div>
             <div style={{
               width: '100%',
@@ -254,9 +267,9 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
               marginTop: '0.25rem'
             }}>
               <div style={{
-                width: `${battleState.playerHP}%`,
+                width: `${(battleState.playerHP / battleState.playerMaxHP) * 100}%`,
                 height: '100%',
-                background: battleState.playerHP > 30 ? '#38a169' : '#e53e3e',
+                background: battleState.playerHP > (battleState.playerMaxHP * 0.3) ? '#38a169' : '#e53e3e',
                 transition: 'width 0.3s ease'
               }} />
             </div>
@@ -264,7 +277,7 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>SP:</span>
-              <span>{battleState.playerSP}/100</span>
+              <span>{battleState.playerSP}/{battleState.playerMaxSP}</span>
             </div>
             <div style={{
               width: '100%',
@@ -275,7 +288,7 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
               marginTop: '0.25rem'
             }}>
               <div style={{
-                width: `${battleState.playerSP}%`,
+                width: `${(battleState.playerSP / battleState.playerMaxSP) * 100}%`,
                 height: '100%',
                 background: '#3182ce',
                 transition: 'width 0.3s ease'

@@ -37,6 +37,8 @@ export default function GameMain() {
   const [, forceUpdate] = useState({});
   const [showAdminAuth, setShowAdminAuth] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
+  const [showChoiceEvent, setShowChoiceEvent] = useState(false);
+  const [currentChoiceEvent, setCurrentChoiceEvent] = useState(null);
 
   // URLパス監視で /admin アクセスを検知
   useEffect(() => {
@@ -93,9 +95,43 @@ export default function GameMain() {
           gameState.endBattle(result, rewards);
           
           // 現在のイベントを完了
-          if (currentEvent && (currentEvent.type === 'battle' || currentEvent.type === 'boss')) {
+          if (currentEvent && (currentEvent.type === 'battle' || currentEvent.type === 'boss' || currentEvent.type === 'final-boss')) {
             console.log('イベント完了:', currentEvent.id);
+            console.log('完了前のイベント状態:', currentEvent);
             gameState.completeChapterEvent(currentEvent.id);
+            
+            // 完了後の状態を確認
+            const updatedEvent = gameState.chapterEvents.find(e => e.id === currentEvent.id);
+            console.log('完了後のイベント状態:', updatedEvent);
+            
+            // 期末試験（final-boss）完了時の特別処理
+            if (currentEvent.type === 'final-boss' && result === 'victory') {
+              console.log('期末試験完了！章進行をチェック...');
+              
+              // 章完了チェック
+              const canAdvance = gameState.canAdvanceToNextChapter();
+              console.log('章進行可能性:', canAdvance);
+              if (canAdvance.canAdvance) {
+                console.log('次章への進行が可能です');
+                
+                // 次章進行の確認メッセージを表示
+                setTimeout(() => {
+                  const shouldAdvance = confirm('期末試験に合格しました！次の章に進みますか？');
+                  if (shouldAdvance) {
+                    const advanceResult = gameState.advanceToNextChapter();
+                    if (advanceResult.success) {
+                      setActionMessage(`🎉 ${advanceResult.message}`);
+                      refresh();
+                    } else {
+                      setActionMessage(`❌ ${advanceResult.message}`);
+                    }
+                  }
+                }, 1000);
+              } else {
+                console.log('章進行要件未達:', canAdvance.message);
+                setActionMessage(`期末試験は完了しましたが、進級要件が不足しています: ${canAdvance.message}`);
+              }
+            }
             
             // 強制的に状態を更新
             refresh();
@@ -249,11 +285,9 @@ export default function GameMain() {
       gameState.startBattle(currentEvent.enemy);
       refresh();
     } else if (currentEvent.type === 'choice') {
-      // 選択イベントの場合は専用UI表示（後で実装）
-      alert('選択イベントが開始されました！選択肢を選んでください。');
-      // 一時的に完了処理
-      gameState.completeChapterEvent(currentEvent.id);
-      refresh();
+      // 選択イベントUI表示
+      setCurrentChoiceEvent(currentEvent);
+      setShowChoiceEvent(true);
     } else {
       // その他のイベント
       gameState.completeChapterEvent(currentEvent.id);
@@ -270,6 +304,35 @@ export default function GameMain() {
       gameState.saveToLocalStorage('autosave');
       
       refresh();
+    }
+  };
+
+  // 選択肢処理
+  const handleChoice = (choiceId) => {
+    if (!currentChoiceEvent) return;
+    
+    const result = gameState.processChoiceEvent(currentChoiceEvent.id, choiceId);
+    
+    if (result.success) {
+      const message = result.message;
+      setActionMessage(message);
+      
+      setEventLogs(prev => [...prev, {
+        id: prev.length + 1,
+        message: message,
+        timestamp: Date.now()
+      }]);
+      
+      // 選択イベント終了
+      setShowChoiceEvent(false);
+      setCurrentChoiceEvent(null);
+      
+      // オートセーブ実行
+      gameState.saveToLocalStorage('autosave');
+      
+      refresh();
+    } else {
+      setActionMessage(`❌ ${result.message}`);
     }
   };
 
@@ -1210,7 +1273,7 @@ export default function GameMain() {
                   fontWeight: 'bold',
                   color: key === 'stress' && value > 60 ? '#e53e3e' : '#2d3748'
                 }}>
-                  {value}{key === 'hp' || key === 'sp' ? '/100' : ''}
+                  {value}{key === 'hp' ? `/${gameState.playerStats.maxHP}` : key === 'sp' ? `/${gameState.playerStats.maxSP}` : ''}
                 </span>
               </div>
             ))}
@@ -1322,10 +1385,10 @@ export default function GameMain() {
                                 onClick={() => {
                                   const result = gameState.advanceToNextChapter();
                                   if (result.success) {
-                                    setActionMessage(result.message);
+                                    setActionMessage(`🎉 ${result.message}`);
                                     refresh();
                                   } else {
-                                    alert(result.message);
+                                    setActionMessage(`📝 ${result.message}`);
                                   }
                                 }}
                                 style={{
@@ -1420,6 +1483,82 @@ export default function GameMain() {
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
+
+      {/* 選択イベントモーダル */}
+      {showChoiceEvent && currentChoiceEvent && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: 12,
+            padding: '2rem',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)'
+          }}>
+            <h2 style={{ 
+              marginTop: 0, 
+              color: '#2d3748',
+              textAlign: 'center',
+              marginBottom: '1.5rem'
+            }}>
+              {currentChoiceEvent.name}
+            </h2>
+            
+            <div style={{ 
+              marginBottom: '2rem',
+              color: '#4a5568',
+              textAlign: 'center',
+              lineHeight: '1.6'
+            }}>
+              選択してください：
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {currentChoiceEvent.choices?.map(choice => (
+                <button
+                  key={choice.id}
+                  onClick={() => handleChoice(choice.id)}
+                  style={{
+                    padding: '1rem',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    transition: 'transform 0.2s ease',
+                    textAlign: 'left'
+                  }}
+                  onMouseOver={(e) => e.target.style.transform = 'scale(1.02)'}
+                  onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+                >
+                  <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                    {choice.name}
+                  </div>
+                  {choice.effect && (
+                    <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
+                      効果: {Object.entries(choice.effect).map(([key, value]) => 
+                        `${key}${value > 0 ? '+' : ''}${value}`
+                      ).join(', ')}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
