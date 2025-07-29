@@ -134,7 +134,7 @@ export default function TitleScreen({ onStart }) {
           color: '#a0aec0',
           opacity: 0.7
         }}>
-          Version 0.1 - 設計資料準拠版
+          Version 0.3 - α版
         </div>
       </div>
 
