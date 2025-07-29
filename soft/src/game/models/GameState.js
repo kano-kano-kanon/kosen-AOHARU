@@ -86,6 +86,74 @@ class GameState {
     this.isAdmin = false;
     this.adminPasswordHash = 'mnsd2025x'; 
     
+    // ショップシステム
+    this.shopItems = [
+      {
+        id: 'energy_drink',
+        name: 'エナジードリンク',
+        description: 'SP+20回復',
+        price: 150,
+        effect: { sp: 20 },
+        category: 'consumable',
+        icon: '⚡'
+      },
+      {
+        id: 'health_food',
+        name: '栄養食品',
+        description: 'HP+25回復',
+        price: 200,
+        effect: { hp: 25 },
+        category: 'consumable',
+        icon: '🥗'
+      },
+      {
+        id: 'stress_relief',
+        name: 'リラックスグッズ',
+        description: 'ストレス-15軽減',
+        price: 300,
+        effect: { stress: -15 },
+        category: 'consumable',
+        icon: '🧘'
+      },
+      {
+        id: 'study_guide',
+        name: '参考書',
+        description: '理論力+2永続強化',
+        price: 500,
+        effect: { theory: 2 },
+        category: 'upgrade',
+        icon: '📚'
+      },
+      {
+        id: 'presentation_kit',
+        name: 'プレゼンキット',
+        description: '社交性+2永続強化',
+        price: 450,
+        effect: { social: 2 },
+        category: 'upgrade',
+        icon: '🎤'
+      },
+      {
+        id: 'time_planner',
+        name: 'スケジュール帳',
+        description: '提出力+3永続強化',
+        price: 400,
+        effect: { submission: 3 },
+        category: 'upgrade',
+        icon: '📅'
+      },
+      {
+        id: 'lucky_charm',
+        name: 'お守り',
+        description: '最大HP+10、最大SP+10',
+        price: 1000,
+        effect: { maxHP: 10, maxSP: 10, hp: 10, sp: 10 },
+        category: 'rare',
+        icon: '🍀'
+      }
+    ];
+    this.purchasedItems = []; // 購入履歴
+    
     // オートセーブの設定
     this.autoSaveEnabled = true;
     this.lastAutoSave = 0;
@@ -259,9 +327,11 @@ class GameState {
       if (this.playerStats.hasOwnProperty(stat)) {
         this.playerStats[stat] = Math.max(0, this.playerStats[stat] + statChanges[stat]);
         
-        // HP/SPの上限チェック
-        if (stat === 'hp' || stat === 'sp') {
-          this.playerStats[stat] = Math.min(100, this.playerStats[stat]);
+        // HP/SPの上限チェック（動的最大値対応）
+        if (stat === 'hp') {
+          this.playerStats[stat] = Math.min(this.playerStats.maxHP || 100, this.playerStats[stat]);
+        } else if (stat === 'sp') {
+          this.playerStats[stat] = Math.min(this.playerStats.maxSP || 100, this.playerStats[stat]);
         }
       }
     });
@@ -319,6 +389,15 @@ class GameState {
 
     const result = actions[actionType] ? actions[actionType]() : '無効な行動です。';
     
+    // ランダムイベント発生判定（20%の確率）
+    let randomEventMessage = '';
+    if (Math.random() < 0.2) {
+      const randomEvent = this.triggerRandomEvent();
+      if (randomEvent.occurred) {
+        randomEventMessage = '\n\n✨ ' + randomEvent.event.message;
+      }
+    }
+    
     // 選択履歴に追加
     this.choiceHistory.push({
       week: this.currentWeek,
@@ -329,7 +408,7 @@ class GameState {
     // 行動後にオートセーブを実行
     this.performAutoSave();
 
-    return result;
+    return result + randomEventMessage;
   }
 
   // オートセーブ実行
@@ -359,7 +438,10 @@ class GameState {
       flags: Array.from(this.flags),
       choiceHistory: this.choiceHistory,
       defeatedEnemies: this.defeatedEnemies,
-      isAdmin: this.isAdmin
+      isAdmin: this.isAdmin,
+      purchasedItems: this.purchasedItems,
+      chapterProgress: this.chapterProgress,
+      chapterEvents: this.chapterEvents
     };
   }
 
@@ -375,6 +457,9 @@ class GameState {
     this.choiceHistory = saveData.choiceHistory || [];
     this.defeatedEnemies = saveData.defeatedEnemies || [];
     this.isAdmin = saveData.isAdmin || false;
+    this.purchasedItems = saveData.purchasedItems || [];
+    this.chapterProgress = saveData.chapterProgress || 0;
+    this.chapterEvents = saveData.chapterEvents || null;
   }
 
   // 章システム
@@ -405,6 +490,37 @@ class GameState {
             requirements: { submission: 80, theory: 70, social: 40, maxStress: 60 },
             enemy: { name: '期末試験：総合評価', hp: 128, maxHP: 128, expReward: 200, submissionBonus: 5, description: '第1章最強の敵。高い提出力と理論力が必要' } },
           { id: 'finalEvaluation', name: '期末評価', completed: false, type: 'evaluation' }
+        ];
+        break;
+      case 2:
+        this.chapterGoals = {
+          requiredCredits: 5,
+          maxStress: 70,
+          targetNPCs: ['美濃玲', '真田翔'],
+          specialRequirement: 'NPC好感度64以上を2人'
+        };
+        this.chapterEvents = [
+          { id: 'secondYearStart', name: '2年生開始', completed: false, type: 'intro' },
+          { id: 'specialization', name: '専門分野選択', completed: false, type: 'choice',
+            choices: [
+              { id: 'engineering', name: '工学系', effect: { theory: 5, submission: 3 } },
+              { id: 'science', name: '理学系', effect: { theory: 7, social: 1 } },
+              { id: 'business', name: '経営系', effect: { social: 5, money: 500 } }
+            ]
+          },
+          { id: 'groupProject1', name: 'グループプロジェクト開始', completed: false, type: 'battle',
+            enemy: { name: 'チーム課題の壁', hp: 80, maxHP: 80, expReward: 150, submissionBonus: 3, description: 'チームワークが試される課題' } },
+          { id: 'npcEvent1', name: '先輩との交流', completed: false, type: 'social' },
+          { id: 'freeAction6', name: '自由行動6', completed: false, type: 'free' },
+          { id: 'freeAction7', name: '自由行動7', completed: false, type: 'free' },
+          { id: 'technicalChallenge', name: '技術コンテスト', completed: false, type: 'boss',
+            requirements: { theory: 100, submission: 90 },
+            enemy: { name: '技術力の試練', hp: 120, maxHP: 120, expReward: 300, submissionBonus: 8, description: '高度な技術知識が必要な難敵' } },
+          { id: 'freeAction8', name: '自由行動8', completed: false, type: 'free' },
+          { id: 'chapter2Final', name: '学年末総合評価', completed: false, type: 'final-boss',
+            requirements: { submission: 120, theory: 110, social: 80, maxStress: 70 },
+            enemy: { name: '総合評価：専門課程', hp: 180, maxHP: 180, expReward: 400, submissionBonus: 10, description: '2年生最終試験。すべてのスキルが試される' } },
+          { id: 'chapter2End', name: '第2章完了', completed: false, type: 'evaluation' }
         ];
         break;
       default:
@@ -743,6 +859,302 @@ class GameState {
     
     this.defeatedEnemies.push(enemy);
     return true;
+  }
+
+  // === ショップシステム ===
+
+  // ショップアイテム購入
+  purchaseItem(itemId) {
+    const item = this.shopItems.find(i => i.id === itemId);
+    if (!item) {
+      return { success: false, message: 'アイテムが見つかりません' };
+    }
+
+    // お金チェック
+    if (this.playerStats.money < item.price) {
+      return { 
+        success: false, 
+        message: `所持金が不足しています（必要: ¥${item.price.toLocaleString()}, 現在: ¥${this.playerStats.money.toLocaleString()}）` 
+      };
+    }
+
+    // 購入済みアイテムのチェック（アップグレード系のみ）
+    if (item.category === 'upgrade' || item.category === 'rare') {
+      const alreadyPurchased = this.purchasedItems.some(p => p.itemId === itemId);
+      if (alreadyPurchased) {
+        return { success: false, message: 'このアイテムは既に購入済みです' };
+      }
+    }
+
+    // 購入処理
+    this.playerStats.money -= item.price;
+    
+    // アイテム効果適用
+    this.changeStats(item.effect);
+    
+    // 購入履歴に追加
+    this.purchasedItems.push({
+      itemId: itemId,
+      itemName: item.name,
+      purchaseDate: Date.now(),
+      price: item.price
+    });
+
+    // オートセーブ
+    this.performAutoSave();
+
+    return { 
+      success: true, 
+      message: `${item.name}を購入しました！${item.description}` 
+    };
+  }
+
+  // ショップアイテム一覧取得（購入状態込み）
+  getShopItems() {
+    return this.shopItems.map(item => ({
+      ...item,
+      isPurchased: this.purchasedItems.some(p => p.itemId === item.id),
+      canPurchase: this.playerStats.money >= item.price && 
+                  !(item.category === 'upgrade' || item.category === 'rare') || 
+                  !this.purchasedItems.some(p => p.itemId === item.id)
+    }));
+  }
+
+  // 購入履歴取得
+  getPurchaseHistory() {
+    return this.purchasedItems.sort((a, b) => b.purchaseDate - a.purchaseDate);
+  }
+
+  // === 章進行システム拡張 ===
+
+  // 章完了チェック
+  canAdvanceToNextChapter() {
+    if (!this.chapterEvents) return { canAdvance: false, message: '章データが見つかりません' };
+    
+    const completedEvents = this.chapterEvents.filter(e => e.completed).length;
+    const totalEvents = this.chapterEvents.length;
+    
+    if (completedEvents < totalEvents) {
+      return { 
+        canAdvance: false, 
+        message: `章の進行が不完全です (${completedEvents}/${totalEvents})` 
+      };
+    }
+
+    // 章固有の要件チェック
+    const goals = this.chapterGoals;
+    const missing = [];
+
+    if (goals.requiredCredits && this.playerStats.submission < goals.requiredCredits * 30) {
+      missing.push(`提出力不足（目安: ${goals.requiredCredits * 30}）`);
+    }
+
+    if (goals.maxStress && this.playerStats.stress > goals.maxStress) {
+      missing.push(`ストレス過多（${goals.maxStress}以下必要）`);
+    }
+
+    if (goals.specialRequirement === 'NPC好感度64以上を2人') {
+      const highAffectionNPCs = Object.values(this.npcs).filter(npc => npc.affection >= 64);
+      if (highAffectionNPCs.length < 2) {
+        missing.push(`NPC好感度64以上が${highAffectionNPCs.length}/2人`);
+      }
+    }
+
+    if (missing.length > 0) {
+      return {
+        canAdvance: false,
+        message: `次章への進級要件未達成:\n${missing.join('\n')}`
+      };
+    }
+
+    return { canAdvance: true, message: '次章に進むことができます！' };
+  }
+
+  // 次章へ進む
+  advanceToNextChapter() {
+    const advanceCheck = this.canAdvanceToNextChapter();
+    if (!advanceCheck.canAdvance) {
+      return { success: false, message: advanceCheck.message };
+    }
+
+    // レベルアップボーナス（章クリア報酬）
+    const chapterBonus = {
+      1: { exp: 500, money: 2000, maxHP: 20, maxSP: 30 },
+      2: { exp: 800, money: 3500, maxHP: 30, maxSP: 40 }
+    };
+
+    const bonus = chapterBonus[this.currentChapter];
+    if (bonus) {
+      this.gainExperience(bonus.exp);
+      this.changeStats(bonus);
+      this.playerStats.money += bonus.money;
+    }
+
+    // 次章初期化
+    this.currentChapter += 1;
+    this.currentWeek = 1;
+    this.initializeChapter(this.currentChapter);
+
+    // オートセーブ
+    this.performAutoSave();
+
+    return { 
+      success: true, 
+      message: `第${this.currentChapter}章開始！章クリア報酬を獲得しました。` 
+    };
+  }
+
+  // 選択イベント処理
+  processChoiceEvent(eventId, choiceId) {
+    const event = this.chapterEvents.find(e => e.id === eventId);
+    if (!event || event.type !== 'choice') {
+      return { success: false, message: '選択イベントが見つかりません' };
+    }
+
+    const choice = event.choices.find(c => c.id === choiceId);
+    if (!choice) {
+      return { success: false, message: '選択肢が見つかりません' };
+    }
+
+    // 選択効果を適用
+    if (choice.effect) {
+      this.changeStats(choice.effect);
+    }
+
+    // 選択を記録
+    event.selectedChoice = choiceId;
+    this.completeChapterEvent(eventId);
+
+    // フラグ追加
+    this.flags.add(`choice_${eventId}_${choiceId}`);
+
+    return { 
+      success: true, 
+      message: `${choice.name}を選択しました！`,
+  effect: choice.effect
+    };
+  }
+
+  // === ランダムイベントシステム ===
+
+  // ランダムイベント一覧
+  getRandomEvents() {
+    return [
+      {
+        id: 'lucky_money',
+        name: '幸運の小銭',
+        description: '道端で小銭を拾いました',
+        probability: 0.15,
+        effect: { money: 100 },
+        message: '道端で100円を拾いました！ラッキー！'
+      },
+      {
+        id: 'helpful_senior',
+        name: '親切な先輩',
+        description: '先輩からアドバイスをもらえました',
+        probability: 0.12,
+        effect: { theory: 1, social: 1 },
+        message: '先輩から勉強のコツを教えてもらいました！'
+      },
+      {
+        id: 'bad_weather',
+        name: '悪天候',
+        description: '雨で疲れが溜まりました',
+        probability: 0.08,
+        effect: { stress: 3, sp: -5 },
+        message: '雨でびしょ濡れに...少し疲れました'
+      },
+      {
+        id: 'vending_machine',
+        name: '当たり自販機',
+        description: '自販機でもう一本！',
+        probability: 0.05,
+        effect: { sp: 10 },
+        message: '自販機で当たりが出ました！もう一本でSP回復！'
+      },
+      {
+        id: 'library_discovery',
+        name: '図書館での発見',
+        description: '図書館で良い資料を見つけました',
+        probability: 0.10,
+        effect: { theory: 2 },
+        message: '図書館で素晴らしい参考書を発見しました！'
+      },
+      {
+        id: 'club_invitation',
+        name: 'サークルの誘い',
+        description: '先輩からサークルに誘われました',
+        probability: 0.07,
+        effect: { social: 2, stress: -2 },
+        message: 'サークルの先輩と楽しく話しました！'
+      },
+      {
+        id: 'equipment_malfunction',
+        name: '機材トラブル',
+        description: '実験機材が故障しました',
+        probability: 0.06,
+        effect: { stress: 5, theory: -1 },
+        message: '実験機材が故障...時間をロスしてしまいました'
+      },
+      {
+        id: 'cafeteria_discount',
+        name: '学食割引',
+        description: '学食で割引サービスを受けました',
+        probability: 0.08,
+        effect: { money: 50, stress: -1 },
+        message: '学食で割引サービス！お得に食事できました'
+      }
+    ];
+  }
+
+  // ランダムイベント発生判定
+  triggerRandomEvent() {
+    const events = this.getRandomEvents();
+    const totalProbability = Math.random();
+    let cumulativeProbability = 0;
+
+    for (const event of events) {
+      cumulativeProbability += event.probability;
+      if (totalProbability <= cumulativeProbability) {
+        // イベント発生
+        this.changeStats(event.effect);
+        
+        // イベントログに記録
+        this.flags.add(`random_event_${event.id}_${Date.now()}`);
+        
+        return {
+          occurred: true,
+          event: event
+        };
+      }
+    }
+
+    return { occurred: false };
+  }
+
+  // ランダムイベント発生判定
+  triggerRandomEvent() {
+    const events = this.getRandomEvents();
+    const totalProbability = Math.random();
+    let cumulativeProbability = 0;
+
+    for (const event of events) {
+      cumulativeProbability += event.probability;
+      if (totalProbability <= cumulativeProbability) {
+        // イベント発生
+        this.changeStats(event.effect);
+        
+        // イベントログに記録
+        this.flags.add(`random_event_${event.id}_${Date.now()}`);
+        
+        return {
+          occurred: true,
+          event: event
+        };
+      }
+    }
+
+    return { occurred: false };
   }
 }
 

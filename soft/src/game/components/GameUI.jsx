@@ -1,5 +1,33 @@
 import React from 'react';
 
+// 共通スタイル定数（軽量化）
+const STYLES = {
+  statCard: {
+    background: '#f7fafc',
+    border: '2px solid #e2e8f0',
+    borderRadius: 8,
+    padding: '1rem'
+  },
+  progressBar: {
+    width: '100%',
+    height: '8px',
+    background: '#e2e8f0',
+    borderRadius: 4,
+    marginTop: '0.5rem',
+    overflow: 'hidden'
+  },
+  gridThree: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '1rem'
+  },
+  gridTwo: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '1rem'
+  }
+};
+
 /**
  * ゲームUIコンポーネント
  * プレイヤーのステータス表示を担当
@@ -17,18 +45,11 @@ export default function GameUI({ gameState }) {
       
       {/* メインステータス */}
       <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(2, 1fr)', 
-        gap: '1rem',
+        ...STYLES.gridTwo,
         marginBottom: '2rem'
       }}>
         {/* HP */}
-        <div style={{
-          background: '#f7fafc',
-          border: '2px solid #e2e8f0',
-          borderRadius: 8,
-          padding: '1rem'
-        }}>
+        <div style={STYLES.statCard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 'bold', color: '#2d3748' }}>HP（体力）</span>
             <span style={{ 
@@ -36,19 +57,12 @@ export default function GameUI({ gameState }) {
               fontWeight: 'bold',
               color: playerStats.hp > 70 ? '#38a169' : playerStats.hp > 30 ? '#d69e2e' : '#e53e3e'
             }}>
-              {playerStats.hp}/100
+              {playerStats.hp}/{playerStats.maxHP || 100}
             </span>
           </div>
-          <div style={{
-            width: '100%',
-            height: '8px',
-            background: '#e2e8f0',
-            borderRadius: 4,
-            marginTop: '0.5rem',
-            overflow: 'hidden'
-          }}>
+          <div style={STYLES.progressBar}>
             <div style={{
-              width: `${playerStats.hp}%`,
+              width: `${(playerStats.hp / (playerStats.maxHP || 100)) * 100}%`,
               height: '100%',
               background: playerStats.hp > 70 ? '#38a169' : playerStats.hp > 30 ? '#d69e2e' : '#e53e3e',
               transition: 'width 0.3s ease'
@@ -57,12 +71,7 @@ export default function GameUI({ gameState }) {
         </div>
 
         {/* SP */}
-        <div style={{
-          background: '#f7fafc',
-          border: '2px solid #e2e8f0',
-          borderRadius: 8,
-          padding: '1rem'
-        }}>
+        <div style={STYLES.statCard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 'bold', color: '#2d3748' }}>SP（精神力）</span>
             <span style={{ 
@@ -70,19 +79,12 @@ export default function GameUI({ gameState }) {
               fontWeight: 'bold',
               color: playerStats.sp > 70 ? '#3182ce' : playerStats.sp > 30 ? '#d69e2e' : '#e53e3e'
             }}>
-              {playerStats.sp}/100
+              {playerStats.sp}/{playerStats.maxSP || 100}
             </span>
           </div>
-          <div style={{
-            width: '100%',
-            height: '8px',
-            background: '#e2e8f0',
-            borderRadius: 4,
-            marginTop: '0.5rem',
-            overflow: 'hidden'
-          }}>
+          <div style={STYLES.progressBar}>
             <div style={{
-              width: `${playerStats.sp}%`,
+              width: `${(playerStats.sp / (playerStats.maxSP || 100)) * 100}%`,
               height: '100%',
               background: playerStats.sp > 70 ? '#3182ce' : playerStats.sp > 30 ? '#d69e2e' : '#e53e3e',
               transition: 'width 0.3s ease'
@@ -94,11 +96,7 @@ export default function GameUI({ gameState }) {
       {/* 学業ステータス */}
       <div style={{ marginBottom: '2rem' }}>
         <h4 style={{ marginBottom: '1rem', color: '#2d3748' }}>学業関連ステータス</h4>
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(3, 1fr)', 
-          gap: '1rem'
-        }}>
+        <div style={STYLES.gridThree}>
           {[
             { key: 'submission', label: '提出力', color: '#38b2ac', icon: '📝' },
             { key: 'theory', label: '理論力', color: '#9f7aea', icon: '🧠' },

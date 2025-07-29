@@ -28,7 +28,7 @@ export default function GameMain() {
     });
     return gs;
   });
-  const [currentView, setCurrentView] = useState('status'); // status, action, npcs, log
+  const [currentView, setCurrentView] = useState('status'); // status, action, npcs, log, shop
   const [actionMessage, setActionMessage] = useState('');
   const [eventLogs, setEventLogs] = useState([
     { id: 1, message: '高専RPG「青春オーバードライブ」へようこそ！', timestamp: Date.now() },
@@ -234,10 +234,25 @@ export default function GameMain() {
         alert(requirementCheck.message);
       }
     }
+
+    // 技術コンテストなどの要件チェック
+    if (currentEvent.requirements) {
+      const requirementCheck = gameState.checkEventRequirements(currentEvent.id);
+      if (!requirementCheck.canAccess) {
+        alert(requirementCheck.message);
+        return;
+      }
+    }
     
     if (currentEvent.type === 'battle' || currentEvent.type === 'boss' || currentEvent.type === 'final-boss') {
       // バトル開始
       gameState.startBattle(currentEvent.enemy);
+      refresh();
+    } else if (currentEvent.type === 'choice') {
+      // 選択イベントの場合は専用UI表示（後で実装）
+      alert('選択イベントが開始されました！選択肢を選んでください。');
+      // 一時的に完了処理
+      gameState.completeChapterEvent(currentEvent.id);
       refresh();
     } else {
       // その他のイベント
@@ -402,6 +417,7 @@ export default function GameMain() {
               { key: 'status', label: 'ステータス' },
               { key: 'action', label: '行動選択' },
               { key: 'npcs', label: 'NPC' },
+              { key: 'shop', label: 'ショップ' },
               { key: 'rematch', label: '再戦' },
               { key: 'save', label: 'セーブ&ロード' },
               { key: 'log', label: 'ログ' }
@@ -552,6 +568,126 @@ export default function GameMain() {
               playerSP={gameState.playerStats.sp}
               playerHP={gameState.playerStats.hp}
             />
+          )}
+
+          {currentView === 'shop' && (
+            <div>
+              <h3 style={{ marginBottom: '1rem', color: '#2d3748' }}>
+                🛒 ショップ
+                <span style={{ fontSize: '1rem', fontWeight: 'normal', marginLeft: '1rem', color: '#4a5568' }}>
+                  所持金: ¥{gameState.playerStats.money.toLocaleString()}
+                </span>
+              </h3>
+              
+              {/* ショップアイテム一覧 */}
+              <div style={{ display: 'grid', gap: '1rem' }}>
+                {gameState.getShopItems().map(item => (
+                  <div key={item.id} style={{
+                    background: item.isPurchased ? '#f0f8f0' : '#f8f9fa',
+                    border: `2px solid ${item.isPurchased ? '#28a745' : '#e9ecef'}`,
+                    borderRadius: 8,
+                    padding: '1rem',
+                    opacity: item.isPurchased && (item.category === 'upgrade' || item.category === 'rare') ? 0.7 : 1
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: 0, color: '#495057', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '1.5rem' }}>{item.icon}</span>
+                          {item.name}
+                          {item.isPurchased && (
+                            <span style={{ 
+                              background: '#28a745', 
+                              color: 'white', 
+                              padding: '0.125rem 0.375rem', 
+                              borderRadius: 8, 
+                              fontSize: '0.7rem' 
+                            }}>
+                              購入済み
+                            </span>
+                          )}
+                        </h4>
+                        <p style={{ margin: '0.5rem 0', color: '#6c757d', fontSize: '0.9rem' }}>
+                          {item.description}
+                        </p>
+                        <div style={{ fontSize: '0.8rem', color: '#495057' }}>
+                          <span style={{ 
+                            background: item.category === 'consumable' ? '#ffc107' : 
+                                      item.category === 'upgrade' ? '#17a2b8' : '#6f42c1',
+                            color: 'white',
+                            padding: '0.125rem 0.375rem',
+                            borderRadius: 4,
+                            marginRight: '0.5rem'
+                          }}>
+                            {item.category === 'consumable' ? '消耗品' : 
+                             item.category === 'upgrade' ? '永続強化' : 'レア'}
+                          </span>
+                          ¥{item.price.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const result = gameState.purchaseItem(item.id);
+                        if (result.success) {
+                          setActionMessage(result.message);
+                          refresh();
+                        } else {
+                          alert(result.message);
+                        }
+                      }}
+                      disabled={!item.canPurchase}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: item.canPurchase ? '#007bff' : '#6c757d',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        cursor: item.canPurchase ? 'pointer' : 'not-allowed',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {item.isPurchased && (item.category === 'upgrade' || item.category === 'rare') ? 
+                        '購入済み' : 
+                        gameState.playerStats.money < item.price ? 
+                          '所持金不足' : 
+                          '購入する'
+                      }
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* 購入履歴 */}
+              {gameState.getPurchaseHistory().length > 0 && (
+                <div style={{ marginTop: '2rem' }}>
+                  <h4 style={{ marginBottom: '1rem', color: '#4a5568' }}>📋 購入履歴</h4>
+                  <div style={{ 
+                    background: '#f8f9fa', 
+                    border: '1px solid #dee2e6', 
+                    borderRadius: 6, 
+                    maxHeight: '200px', 
+                    overflowY: 'auto' 
+                  }}>
+                    {gameState.getPurchaseHistory().slice(0, 10).map((purchase, index) => (
+                      <div key={index} style={{
+                        padding: '0.5rem 1rem',
+                        borderBottom: index < 9 ? '1px solid #e9ecef' : 'none',
+                        fontSize: '0.9rem'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>{purchase.itemName}</span>
+                          <span>¥{purchase.price.toLocaleString()}</span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#6c757d' }}>
+                          {new Date(purchase.purchaseDate).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {currentView === 'rematch' && (
@@ -1164,6 +1300,51 @@ export default function GameMain() {
                   {currentEvent && (
                     <div style={{ marginTop: '0.5rem', color: '#2d3748' }}>
                       次: {currentEvent.name}
+                    </div>
+                  )}
+                  
+                  {/* 章完了時の次章進行ボタン */}
+                  {!currentEvent && gameState.chapterProgress >= gameState.chapterEvents.length && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      {(() => {
+                        const advanceCheck = gameState.canAdvanceToNextChapter();
+                        return (
+                          <div>
+                            <div style={{ 
+                              fontSize: '0.8rem', 
+                              color: advanceCheck.canAdvance ? '#28a745' : '#dc3545',
+                              marginBottom: '0.5rem' 
+                            }}>
+                              {advanceCheck.message}
+                            </div>
+                            {advanceCheck.canAdvance && (
+                              <button
+                                onClick={() => {
+                                  const result = gameState.advanceToNextChapter();
+                                  if (result.success) {
+                                    setActionMessage(result.message);
+                                    refresh();
+                                  } else {
+                                    alert(result.message);
+                                  }
+                                }}
+                                style={{
+                                  padding: '0.5rem 1rem',
+                                  background: '#28a745',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: 4,
+                                  cursor: 'pointer',
+                                  fontWeight: 'bold',
+                                  fontSize: '0.9rem'
+                                }}
+                              >
+                                🚀 第{gameState.currentChapter + 1}章に進む
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
