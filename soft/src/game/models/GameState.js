@@ -230,9 +230,10 @@ class GameState {
     // レベルアップボーナス
     const levelUpBonus = {
       hp: 5,
-      sp: 5,
+      sp: 16,
       theory: 2,
-      submission: 1
+      submission: 1,
+      money: 100
     };
 
     // 最大HPとSPを上昇
@@ -392,7 +393,7 @@ class GameState {
         this.chapterEvents = [
           { id: 'orientation', name: 'オリエンテーション', completed: false, type: 'intro' },
           { id: 'firstAssignment', name: '初課題くん', completed: false, type: 'battle', 
-            enemy: { name: '初課題くん', hp: 20, maxHP: 20, expReward: 24, submissionBonus: 1, description: '序盤の簡単な課題' } },
+            enemy: { name: '初課題くん', hp: 32, maxHP: 32, expReward: 24, submissionBonus: 1, description: '序盤の簡単な課題' } },
           { id: 'freeAction1', name: '自由行動1', completed: false, type: 'free' },
           { id: 'freeAction2', name: '自由行動2', completed: false, type: 'free' },
           { id: 'freeAction3', name: '自由行動3', completed: false, type: 'free' },
@@ -402,7 +403,7 @@ class GameState {
             enemy: { name: '教授の中間テスト', hp: 64, maxHP: 64, expReward: 128, submissionBonus: 3, description: 'プレッシャーで攻撃してくる強敵' } },
           { id: 'finalExam', name: '期末試験', completed: false, type: 'final-boss',
             requirements: { submission: 80, theory: 70, social: 40, maxStress: 60 },
-            enemy: { name: '期末試験：総合評価', hp: 120, maxHP: 120, expReward: 200, submissionBonus: 5, description: '第1章最強の敵。高い提出力と理論力が必要' } },
+            enemy: { name: '期末試験：総合評価', hp: 128, maxHP: 128, expReward: 200, submissionBonus: 5, description: '第1章最強の敵。高い提出力と理論力が必要' } },
           { id: 'finalEvaluation', name: '期末評価', completed: false, type: 'evaluation' }
         ];
         break;
