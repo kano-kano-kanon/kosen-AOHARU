@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import TitleScreen from "./components/TitleScreen";
-import GameMain from "./components/GameMain";
+import TitleScreen from "../game/components/TitleScreen";
+import GameMain from "../game/components/GameMain";
 
 const App = () => {
   const [isStarted, setIsStarted] = useState(false);
