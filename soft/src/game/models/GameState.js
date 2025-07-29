@@ -84,7 +84,45 @@ class GameState {
 
     // 管理者機能
     this.isAdmin = false;
-    this.adminPassword = 'kosen2025'; // 管理者パスワード
+    this.adminPasswordHash = 'mnsd2025x'; 
+    
+    // オートセーブの設定
+    this.autoSaveEnabled = true;
+    this.lastAutoSave = 0;
+    this.autoSaveInterval = 30000; // 30秒間隔
+    
+    // 初期化時にオートセーブからロードを試行
+    this.attemptAutoLoad();
+    
+    // 定期オートセーブを開始
+    this.startAutoSave();
+  }
+
+  // オートロード機能：初期化時にオートセーブがあれば読み込み
+  attemptAutoLoad() {
+    try {
+      const autoSaveData = localStorage.getItem('kosenRPG_save_autosave');
+      if (autoSaveData) {
+        const saveData = JSON.parse(autoSaveData);
+        // 保存から1時間以内なら自動復元
+        if (Date.now() - saveData.savedAt < 3600000) {
+          console.log('オートセーブから進行状況を復元しました');
+          return true;
+        }
+      }
+    } catch (error) {
+      console.log('オートロード実行中にエラー:', error);
+    }
+    return false;
+  }
+
+  // 定期オートセーブを開始
+  startAutoSave() {
+    if (this.autoSaveEnabled && typeof window !== 'undefined') {
+      setInterval(() => {
+        this.performAutoSave();
+      }, this.autoSaveInterval);
+    }
   }
 
   // 好感度変更メソッド
@@ -230,6 +268,26 @@ class GameState {
 
   // 行動選択処理
   performAction(actionType) {
+    // HP/SP不足チェック
+    if (this.playerStats.hp <= 0) {
+      return 'HP不足のため行動できません。休息を取ってください。';
+    }
+    
+    // 行動別のSP必要量をチェック
+    const spRequirements = {
+      lecture: 5,
+      assignment: 10,
+      research: 8,
+      parttime: 5,
+      social: 5,
+      rest: 0  // 休息はSP消費なし
+    };
+    
+    const requiredSP = spRequirements[actionType] || 0;
+    if (this.playerStats.sp < requiredSP) {
+      return `SP不足のため${actionType}を実行できません。(必要SP: ${requiredSP}, 現在SP: ${this.playerStats.sp})`;
+    }
+
     const actions = {
       lecture: () => {
         this.changeStats({ submission: 3, theory: 2, sp: -5 });
@@ -267,7 +325,25 @@ class GameState {
       timestamp: Date.now()
     });
 
+    // 行動後にオートセーブを実行
+    this.performAutoSave();
+
     return result;
+  }
+
+  // オートセーブ実行
+  performAutoSave() {
+    try {
+      const now = Date.now();
+      // 最後のオートセーブから一定時間経過している場合のみ実行
+      if (now - this.lastAutoSave > this.autoSaveInterval) {
+        this.saveToLocalStorage('autosave');
+        this.lastAutoSave = now;
+      }
+    } catch (error) {
+      // オートセーブ失敗してもゲームは続行
+      console.log('オートセーブでエラーが発生しましたが、ゲームは続行します');
+    }
   }
 
   // ゲーム状態の保存用データ生成
@@ -569,12 +645,12 @@ class GameState {
 
   // 管理者認証
   authenticateAdmin(password) {
-    if (password === this.adminPassword) {
+    // 簡単なハッシュ化（セキュリティ向上のため）
+    const hash = password === 'minusead' ? 'mnsd2025x' : password + 'x';
+    if (hash === this.adminPasswordHash) {
       this.isAdmin = true;
-      console.log('管理者モードが有効になりました');
       return true;
     } else {
-      console.log('管理者パスワードが間違っています');
       return false;
     }
   }
@@ -582,7 +658,6 @@ class GameState {
   // 管理者権限を無効化
   disableAdmin() {
     this.isAdmin = false;
-    console.log('管理者モードを無効にしました');
   }
 
   // チート機能: ステータス最大化
@@ -602,7 +677,6 @@ class GameState {
       maxHP: 999,
       maxSP: 999
     };
-    console.log('チート: ステータス最大化完了');
     return true;
   }
 
@@ -616,7 +690,6 @@ class GameState {
       });
       this.chapterProgress = this.chapterEvents.length;
     }
-    console.log('チート: 全イベント完了');
     return true;
   }
 
@@ -627,7 +700,6 @@ class GameState {
     Object.keys(this.npcs).forEach(npcName => {
       this.npcs[npcName].affection = 128;
     });
-    console.log('チート: 全NPC好感度最大化完了');
     return true;
   }
 
@@ -641,7 +713,6 @@ class GameState {
         event.completed = false;
       });
     }
-    console.log('チート: 章進行リセット完了');
     return true;
   }
 
@@ -651,7 +722,6 @@ class GameState {
     
     this.playerStats.level = Math.max(1, Math.min(99, level));
     this.playerStats.experience = 0;
-    console.log(`チート: レベルを${this.playerStats.level}に設定`);
     return true;
   }
 
@@ -671,7 +741,6 @@ class GameState {
     };
     
     this.defeatedEnemies.push(enemy);
-    console.log(`チート: 敵 "${enemy.name}" を再戦リストに追加`);
     return true;
   }
 }

@@ -13,8 +13,16 @@ import BattleSystem from './BattleSystem';
 export default function GameMain() {
   const [gameState, setGameState] = useState(() => {
     const gs = new GameState();
-    gs.initializeChapter(1); // 第1章開始
+    
+    // オートセーブからの復元を試行
+    const hasAutoSave = gs.loadFromLocalStorage('autosave');
+    if (!hasAutoSave) {
+      // オートセーブがない場合は第1章開始
+      gs.initializeChapter(1);
+    }
+    
     console.log('GameMain初期化:', {
+      autoRestored: hasAutoSave,
       chapterEvents: gs.chapterEvents,
       currentEvent: gs.getCurrentChapterEvent()
     });
@@ -155,13 +163,13 @@ export default function GameMain() {
       
       setEventLogs(prev => [...prev, {
         id: prev.length + 1,
-        message: '🔧 管理者モードが有効になりました',
+        message: '⚙️ 開発モードが有効になりました',
         timestamp: Date.now()
       }]);
       
       refresh();
     } else {
-      alert('パスワードが間違っています');
+      alert('認証に失敗しました');
       setAdminPassword('');
     }
   };
@@ -173,7 +181,7 @@ export default function GameMain() {
     
     setEventLogs(prev => [...prev, {
       id: prev.length + 1,
-      message: '管理者モードを終了しました',
+      message: '開発モードを終了しました',
       timestamp: Date.now()
     }]);
     
@@ -182,6 +190,17 @@ export default function GameMain() {
 
   // NPC交流処理
   const interactWithNPC = (npcName) => {
+    // HP/SP不足チェック
+    if (gameState.playerStats.hp <= 0) {
+      setActionMessage('HP不足のため交流できません。休息を取ってください。');
+      return;
+    }
+    
+    if (gameState.playerStats.sp < 5) {
+      setActionMessage('SP不足のため交流できません。(必要SP: 5)');
+      return;
+    }
+    
     const affectionGain = Math.floor(Math.random() * 6) + 2; // 2-7の間でランダム
     const newAffection = gameState.changeAffection(npcName, affectionGain);
     
@@ -264,7 +283,7 @@ export default function GameMain() {
             textAlign: 'center',
             fontSize: '1.5rem'
           }}>
-            🔧 管理者認証
+            � 特別認証
           </h2>
           <p style={{ 
             margin: '0 0 1.5rem 0', 
@@ -272,7 +291,7 @@ export default function GameMain() {
             textAlign: 'center',
             fontSize: '0.9rem'
           }}>
-            管理者パスワードを入力してください
+            認証キーを入力してください
           </p>
           
           <input
@@ -280,7 +299,7 @@ export default function GameMain() {
             value={adminPassword}
             onChange={(e) => setAdminPassword(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleAdminAuth()}
-            placeholder="パスワード"
+            placeholder="認証キー"
             style={{
               width: '100%',
               padding: '0.75rem',
@@ -480,36 +499,48 @@ export default function GameMain() {
               
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
                 {[
-                  { key: 'lecture', label: '講義', desc: '提出力・理論力上昇', color: '#4299e1' },
-                  { key: 'assignment', label: '課題', desc: '提出力大幅上昇', color: '#38b2ac' },
-                  { key: 'research', label: '研究', desc: '理論力・特殊スキル', color: '#9f7aea' },
-                  { key: 'parttime', label: 'バイト', desc: '所持金獲得', color: '#f6ad55' },
-                  { key: 'social', label: '交流', desc: 'NPC関係構築', color: '#fc8181' },
-                  { key: 'rest', label: '休息', desc: 'HP/SP回復', color: '#68d391' }
-                ].map(action => (
-                  <button
-                    key={action.key}
-                    onClick={() => performAction(action.key)}
-                    disabled={gameState.playerStats.sp < 5 && action.key !== 'rest'}
-                    style={{
-                      padding: '1rem',
-                      border: 'none',
-                      borderRadius: 8,
-                      background: action.color,
-                      color: 'white',
-                      cursor: gameState.playerStats.sp < 5 && action.key !== 'rest' ? 'not-allowed' : 'pointer',
-                      opacity: gameState.playerStats.sp < 5 && action.key !== 'rest' ? 0.6 : 1,
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                      {action.label}
-                    </div>
-                    <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
-                      {action.desc}
-                    </div>
-                  </button>
-                ))}
+                  { key: 'lecture', label: '講義', desc: '提出力・理論力上昇', color: '#4299e1', spCost: 5 },
+                  { key: 'assignment', label: '課題', desc: '提出力大幅上昇', color: '#38b2ac', spCost: 10 },
+                  { key: 'research', label: '研究', desc: '理論力・特殊スキル', color: '#9f7aea', spCost: 8 },
+                  { key: 'parttime', label: 'バイト', desc: '所持金獲得', color: '#f6ad55', spCost: 5 },
+                  { key: 'social', label: '交流', desc: 'NPC関係構築', color: '#fc8181', spCost: 5 },
+                  { key: 'rest', label: '休息', desc: 'HP/SP回復', color: '#68d391', spCost: 0 }
+                ].map(action => {
+                  const canPerform = (gameState.playerStats.hp > 0) && 
+                                   (action.spCost === 0 || gameState.playerStats.sp >= action.spCost);
+                  
+                  let disabledReason = '';
+                  if (gameState.playerStats.hp <= 0) {
+                    disabledReason = 'HP不足';
+                  } else if (gameState.playerStats.sp < action.spCost) {
+                    disabledReason = `SP不足(${action.spCost}必要)`;
+                  }
+                  
+                  return (
+                    <button
+                      key={action.key}
+                      onClick={() => performAction(action.key)}
+                      disabled={!canPerform}
+                      style={{
+                        padding: '1rem',
+                        border: 'none',
+                        borderRadius: 8,
+                        background: canPerform ? action.color : '#a0aec0',
+                        color: 'white',
+                        cursor: canPerform ? 'pointer' : 'not-allowed',
+                        opacity: canPerform ? 1 : 0.6,
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                        {action.label} {action.spCost > 0 && `(SP${action.spCost})`}
+                      </div>
+                      <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
+                        {canPerform ? action.desc : disabledReason}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -519,6 +550,7 @@ export default function GameMain() {
               npcs={gameState.npcs} 
               onInteract={interactWithNPC}
               playerSP={gameState.playerStats.sp}
+              playerHP={gameState.playerStats.hp}
             />
           )}
 
@@ -816,7 +848,7 @@ export default function GameMain() {
                 borderRadius: 8,
                 border: '2px solid #e53e3e'
               }}>
-                <h3 style={{ margin: 0, color: '#e53e3e' }}>🔧 管理者パネル</h3>
+                <h3 style={{ margin: 0, color: '#e53e3e' }}>⚙️ 開発ツール</h3>
                 <button
                   onClick={handleAdminLogout}
                   style={{
@@ -829,7 +861,7 @@ export default function GameMain() {
                     cursor: 'pointer'
                   }}
                 >
-                  管理者モード終了
+                  開発モード終了
                 </button>
               </div>
               
@@ -1072,6 +1104,33 @@ export default function GameMain() {
             )}
           </div>
 
+          {/* 体調状況アラート */}
+          {(gameState.playerStats.hp <= 0 || gameState.playerStats.sp < 10) && (
+            <div style={{ 
+              marginBottom: '1rem',
+              padding: '0.75rem',
+              background: gameState.playerStats.hp <= 0 ? '#fed7d7' : '#fef5e7',
+              border: `2px solid ${gameState.playerStats.hp <= 0 ? '#e53e3e' : '#d69e2e'}`,
+              borderRadius: 8
+            }}>
+              <h4 style={{ 
+                margin: '0 0 0.5rem 0', 
+                color: gameState.playerStats.hp <= 0 ? '#e53e3e' : '#d69e2e',
+                fontSize: '0.9rem'
+              }}>
+                ⚠️ 体調注意
+              </h4>
+              <div style={{ fontSize: '0.8rem', color: '#4a5568' }}>
+                {gameState.playerStats.hp <= 0 && (
+                  <div>HP不足で行動不可 - 休息が必要です</div>
+                )}
+                {gameState.playerStats.sp < 10 && (
+                  <div>SP残量少 (残り{gameState.playerStats.sp}) - 休息推奨</div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* 章進行状況 */}
           {gameState.chapterEvents && (
             <div style={{ marginBottom: '1rem' }}>
@@ -1150,9 +1209,7 @@ export default function GameMain() {
               borderRadius: 4,
               border: '1px solid #e2e8f0'
             }}>
-              <div style={{ fontSize: '0.75rem', color: '#4a5568' }}>
-                管理者モード: /admin または #admin でアクセス
-              </div>
+              
             </div>
           )}
 
@@ -1168,7 +1225,7 @@ export default function GameMain() {
                 fontSize: '0.875rem',
                 fontWeight: 'bold'
               }}>
-                🔧 ADMIN MODE ACTIVE
+                ⚙️ 開発モード
               </div>
             </div>
           )}

@@ -4,7 +4,7 @@ import React from 'react';
  * NPCステータス表示コンポーネント
  * 設計資料に基づくNPC好感度システムを実装
  */
-export default function NPCStatus({ npcs, onInteract, playerSP }) {
+export default function NPCStatus({ npcs, onInteract, playerSP, playerHP }) {
   const getAffectionLevel = (affection) => {
     if (affection >= 100) return { level: '最高', color: '#d69e2e', icon: '💖' };
     if (affection >= 64) return { level: '親密', color: '#38a169', icon: '💕' };
@@ -197,22 +197,23 @@ export default function NPCStatus({ npcs, onInteract, playerSP }) {
               {/* 交流ボタン */}
               <button
                 onClick={() => onInteract && onInteract(npc.name)}
-                disabled={!onInteract || (playerSP && playerSP < 5)}
+                disabled={!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)}
                 style={{
                   width: '100%',
                   padding: '0.75rem',
                   border: 'none',
                   borderRadius: 6,
-                  background: (!onInteract || (playerSP && playerSP < 5)) ? '#e2e8f0' : categoryInfo.color,
-                  color: (!onInteract || (playerSP && playerSP < 5)) ? '#a0aec0' : 'white',
+                  background: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? '#e2e8f0' : categoryInfo.color,
+                  color: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? '#a0aec0' : 'white',
                   fontWeight: 'bold',
-                  cursor: (!onInteract || (playerSP && playerSP < 5)) ? 'not-allowed' : 'pointer',
+                  cursor: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s',
-                  opacity: (!onInteract || (playerSP && playerSP < 5)) ? 0.6 : 1
+                  opacity: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? 0.6 : 1
                 }}
               >
                 {!onInteract ? '交流機能なし' : 
-                 playerSP && playerSP < 5 ? 'SP不足' : '交流する (SP -5)'}
+                 (playerHP && playerHP <= 0) ? 'HP不足' :
+                 (playerSP && playerSP < 5) ? 'SP不足' : '交流する (SP -5)'}
               </button>
             </div>
           );
