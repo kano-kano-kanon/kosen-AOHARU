@@ -14,6 +14,10 @@ export default function GameMain() {
   const [gameState, setGameState] = useState(() => {
     const gs = new GameState();
     gs.initializeChapter(1); // 第1章開始
+    console.log('GameMain初期化:', {
+      chapterEvents: gs.chapterEvents,
+      currentEvent: gs.getCurrentChapterEvent()
+    });
     return gs;
   });
   const [currentView, setCurrentView] = useState('status'); // status, action, npcs, log
@@ -23,6 +27,33 @@ export default function GameMain() {
     { id: 2, message: '第1章：新入生編が始まりました。', timestamp: Date.now() }
   ]);
   const [, forceUpdate] = useState({});
+  const [showAdminAuth, setShowAdminAuth] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+
+  // URLパス監視で /admin アクセスを検知
+  useEffect(() => {
+    const checkAdminPath = () => {
+      // ハッシュフラグメント #admin をチェック
+      if (window.location.hash === '#admin') {
+        setShowAdminAuth(true);
+        // URLを綺麗にする（ハッシュを残す）
+        window.history.replaceState(null, '', window.location.pathname + '#admin');
+      }
+    };
+    
+    checkAdminPath();
+    
+    // ハッシュ変更を監視
+    window.addEventListener('hashchange', checkAdminPath);
+    
+    // ページロード時にもチェック
+    window.addEventListener('load', checkAdminPath);
+    
+    return () => {
+      window.removeEventListener('hashchange', checkAdminPath);
+      window.removeEventListener('load', checkAdminPath);
+    };
+  }, []);
 
   // 強制的にコンポーネントを再描画するための関数
   const refresh = () => forceUpdate({});
@@ -30,14 +61,16 @@ export default function GameMain() {
   // 現在の章イベントを取得
   const currentEvent = gameState.getCurrentChapterEvent();
 
-  // デバッグ情報をコンソールに出力
-  console.log('章進行デバッグ:', {
-    currentChapter: gameState.currentChapter,
-    chapterProgress: gameState.chapterProgress,
-    totalEvents: gameState.chapterEvents?.length,
-    currentEvent: currentEvent,
-    allEvents: gameState.chapterEvents
-  });
+  // デバッグ情報をコンソールに出力（開発時のみ）
+  if (process.env.NODE_ENV === 'development') {
+    console.log('章進行デバッグ:', {
+      currentChapter: gameState.currentChapter,
+      chapterProgress: gameState.chapterProgress,
+      totalEvents: gameState.chapterEvents?.length,
+      currentEvent: currentEvent,
+      allEvents: gameState.chapterEvents
+    });
+  }
 
   // バトル中かどうかをチェック
   if (gameState.gamePhase === 'battle' && gameState.currentBattle) {
@@ -76,6 +109,11 @@ export default function GameMain() {
             timestamp: Date.now()
           }]);
           
+          // バトル終了後にオートセーブ
+          if (result === 'victory') {
+            gameState.saveToLocalStorage('autosave');
+          }
+          
           setActionMessage(resultMessage);
           refresh();
         }}
@@ -101,6 +139,45 @@ export default function GameMain() {
     
     // 3秒後にメッセージをクリア
     setTimeout(() => setActionMessage(''), 3000);
+  };
+
+  // 管理者認証処理
+  const handleAdminAuth = () => {
+    if (gameState.authenticateAdmin(adminPassword)) {
+      setShowAdminAuth(false);
+      setAdminPassword('');
+      setCurrentView('admin');
+      
+      // URLからハッシュを削除して綺麗にする
+      if (window.location.hash === '#admin') {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      
+      setEventLogs(prev => [...prev, {
+        id: prev.length + 1,
+        message: '🔧 管理者モードが有効になりました',
+        timestamp: Date.now()
+      }]);
+      
+      refresh();
+    } else {
+      alert('パスワードが間違っています');
+      setAdminPassword('');
+    }
+  };
+
+  // 管理者モード終了処理
+  const handleAdminLogout = () => {
+    gameState.disableAdmin();
+    setCurrentView('status');
+    
+    setEventLogs(prev => [...prev, {
+      id: prev.length + 1,
+      message: '管理者モードを終了しました',
+      timestamp: Date.now()
+    }]);
+    
+    refresh();
   };
 
   // NPC交流処理
@@ -155,9 +232,110 @@ export default function GameMain() {
         timestamp: Date.now()
       }]);
       
+      // オートセーブ実行
+      gameState.saveToLocalStorage('autosave');
+      
       refresh();
     }
   };
+
+  // 管理者認証画面表示
+  if (showAdminAuth) {
+    return (
+      <div style={{
+        padding: '2rem',
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.95)',
+          borderRadius: 12,
+          padding: '2rem',
+          boxShadow: '0 8px 16px rgba(0, 0, 0, 0.2)',
+          maxWidth: '400px',
+          width: '100%'
+        }}>
+          <h2 style={{ 
+            margin: '0 0 1rem 0', 
+            color: '#2d3748', 
+            textAlign: 'center',
+            fontSize: '1.5rem'
+          }}>
+            🔧 管理者認証
+          </h2>
+          <p style={{ 
+            margin: '0 0 1.5rem 0', 
+            color: '#4a5568', 
+            textAlign: 'center',
+            fontSize: '0.9rem'
+          }}>
+            管理者パスワードを入力してください
+          </p>
+          
+          <input
+            type="password"
+            value={adminPassword}
+            onChange={(e) => setAdminPassword(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleAdminAuth()}
+            placeholder="パスワード"
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              border: '2px solid #e2e8f0',
+              borderRadius: 8,
+              fontSize: '1rem',
+              marginBottom: '1rem',
+              boxSizing: 'border-box'
+            }}
+            autoFocus
+          />
+          
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              onClick={handleAdminAuth}
+              style={{
+                flex: 1,
+                padding: '0.75rem',
+                background: '#e53e3e',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: '1rem',
+                cursor: 'pointer'
+              }}
+            >
+              認証
+            </button>
+            <button
+              onClick={() => {
+                setShowAdminAuth(false);
+                setAdminPassword('');
+                // ハッシュがある場合は削除
+                if (window.location.hash === '#admin') {
+                  window.history.replaceState(null, '', window.location.pathname);
+                }
+              }}
+              style={{
+                flex: 1,
+                padding: '0.75rem',
+                background: '#4a5568',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: '1rem',
+                cursor: 'pointer'
+              }}
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ 
@@ -206,6 +384,7 @@ export default function GameMain() {
               { key: 'action', label: '行動選択' },
               { key: 'npcs', label: 'NPC' },
               { key: 'rematch', label: '再戦' },
+              { key: 'save', label: 'セーブ&ロード' },
               { key: 'log', label: 'ログ' }
             ].map(tab => (
               <button
@@ -422,6 +601,416 @@ export default function GameMain() {
             </div>
           )}
 
+          {currentView === 'save' && (
+            <div>
+              <h3 style={{ marginBottom: '1rem', color: '#2d3748' }}>セーブ&ロード</h3>
+              
+              {/* セーブセクション */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h4 style={{ marginBottom: '0.75rem', color: '#4a5568', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                  💾 ゲームをセーブ
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                  {['slot1', 'slot2', 'slot3'].map(slot => (
+                    <button
+                      key={slot}
+                      onClick={() => {
+                        if (gameState.saveToLocalStorage(slot)) {
+                          alert(`スロット ${slot} にセーブしました！`);
+                          refresh();
+                        } else {
+                          alert('セーブに失敗しました');
+                        }
+                      }}
+                      style={{
+                        padding: '0.75rem',
+                        background: '#38a169',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        transition: 'background 0.2s'
+                      }}
+                    >
+                      {slot.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ロードセクション */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h4 style={{ marginBottom: '0.75rem', color: '#4a5568', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                  📁 セーブデータ一覧
+                </h4>
+                
+                {(() => {
+                  const saves = GameState.getSaveDataList();
+                  return saves.length === 0 ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '2rem',
+                      color: '#718096',
+                      background: '#f7fafc',
+                      borderRadius: 8,
+                      border: '2px dashed #e2e8f0'
+                    }}>
+                      <p style={{ margin: 0, fontSize: '1.1rem' }}>💤 セーブデータがありません</p>
+                      <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>
+                        上のボタンでゲームをセーブしてください
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: '0.75rem' }}>
+                      {saves.map(save => (
+                        <div key={save.slotName} style={{
+                          background: '#f8f9fa',
+                          border: '2px solid #e9ecef',
+                          borderRadius: 8,
+                          padding: '1rem'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                            <div>
+                              <h5 style={{ margin: 0, color: '#495057', fontSize: '1rem' }}>
+                                {save.slotName.toUpperCase()} - {save.playerName}
+                              </h5>
+                              <p style={{ margin: '0.25rem 0', color: '#6c757d', fontSize: '0.9rem' }}>
+                                {save.chapterTitle} | Lv.{save.level}
+                              </p>
+                              <p style={{ margin: '0.25rem 0', color: '#6c757d', fontSize: '0.8rem' }}>
+                                {save.progress}
+                              </p>
+                            </div>
+                            <span style={{ 
+                              background: '#17a2b8', 
+                              color: 'white', 
+                              padding: '0.25rem 0.5rem', 
+                              borderRadius: 12, 
+                              fontSize: '0.75rem' 
+                            }}>
+                              {new Date(save.savedAt).toLocaleString('ja-JP')}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                              onClick={() => {
+                                if (confirm(`スロット ${save.slotName} からロードしますか？\n現在の進行状況は失われます。`)) {
+                                  if (gameState.loadFromLocalStorage(save.slotName)) {
+                                    setGameState(new gameState.constructor(gameState));
+                                    alert('ロードしました！');
+                                    refresh();
+                                  } else {
+                                    alert('ロードに失敗しました');
+                                  }
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '0.5rem',
+                                background: '#007bff',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: 4,
+                                cursor: 'pointer',
+                                fontSize: '0.9rem'
+                              }}
+                            >
+                              📥 ロード
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`スロット ${save.slotName} のセーブデータを削除しますか？`)) {
+                                  if (GameState.deleteSaveData(save.slotName)) {
+                                    alert('削除しました');
+                                    refresh();
+                                  } else {
+                                    alert('削除に失敗しました');
+                                  }
+                                }
+                              }}
+                              style={{
+                                padding: '0.5rem 0.75rem',
+                                background: '#dc3545',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: 4,
+                                cursor: 'pointer',
+                                fontSize: '0.9rem'
+                              }}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* クイックセーブ・オートセーブ */}
+              <div>
+                <h4 style={{ marginBottom: '0.75rem', color: '#4a5568', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                  ⚡ クイック操作
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => {
+                      if (gameState.saveToLocalStorage('quicksave')) {
+                        setActionMessage('クイックセーブしました！');
+                        setTimeout(() => setActionMessage(''), 2000);
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem',
+                      background: '#fd7e14',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    ⚡ クイックセーブ
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('クイックセーブからロードしますか？')) {
+                        if (gameState.loadFromLocalStorage('quicksave')) {
+                          setGameState(new gameState.constructor(gameState));
+                          setActionMessage('クイックロードしました！');
+                          setTimeout(() => setActionMessage(''), 2000);
+                          refresh();
+                        } else {
+                          alert('クイックセーブデータがありません');
+                        }
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem',
+                      background: '#6610f2',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    ⚡ クイックロード
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {gameState.isAdmin && (
+            <div>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                marginBottom: '1rem',
+                padding: '0.75rem',
+                background: 'rgba(229, 62, 62, 0.1)',
+                borderRadius: 8,
+                border: '2px solid #e53e3e'
+              }}>
+                <h3 style={{ margin: 0, color: '#e53e3e' }}>🔧 管理者パネル</h3>
+                <button
+                  onClick={handleAdminLogout}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: '#4a5568',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontSize: '0.9rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  管理者モード終了
+                </button>
+              </div>
+              
+              {/* チート機能セクション */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h4 style={{ marginBottom: '0.75rem', color: '#4a5568', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                  ⚡ チート機能
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                  <button
+                    onClick={() => {
+                      if (gameState.cheatMaxStats()) {
+                        setActionMessage('ステータス最大化完了！');
+                        setTimeout(() => setActionMessage(''), 2000);
+                        refresh();
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem',
+                      background: '#e53e3e',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    💪 ステータス最大化
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      if (gameState.cheatMaxAffection()) {
+                        setActionMessage('NPC好感度最大化完了！');
+                        setTimeout(() => setActionMessage(''), 2000);
+                        refresh();
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem',
+                      background: '#fd7e14',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    💖 NPC好感度MAX
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      if (gameState.cheatCompleteAllEvents()) {
+                        setActionMessage('全イベント完了！');
+                        setTimeout(() => setActionMessage(''), 2000);
+                        refresh();
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem',
+                      background: '#28a745',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    ✅ 全イベント完了
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      if (gameState.cheatResetChapter()) {
+                        setActionMessage('章進行リセット完了！');
+                        setTimeout(() => setActionMessage(''), 2000);
+                        refresh();
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem',
+                      background: '#6f42c1',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    🔄 章進行リセット
+                  </button>
+                </div>
+              </div>
+
+              {/* レベル設定 */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h4 style={{ marginBottom: '0.75rem', color: '#4a5568', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                  📊 レベル設定
+                </h4>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    defaultValue={gameState.playerStats.level}
+                    id="levelInput"
+                    style={{
+                      padding: '0.5rem',
+                      border: '2px solid #e2e8f0',
+                      borderRadius: 4,
+                      width: '80px'
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const level = parseInt(document.getElementById('levelInput').value);
+                      if (gameState.cheatSetLevel(level)) {
+                        setActionMessage(`レベルを${level}に設定しました！`);
+                        setTimeout(() => setActionMessage(''), 2000);
+                        refresh();
+                      }
+                    }}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      background: '#007bff',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 4,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    レベル設定
+                  </button>
+                </div>
+              </div>
+
+              {/* デバッグ敵追加 */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h4 style={{ marginBottom: '0.75rem', color: '#4a5568', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                  👾 デバッグ敵追加
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                  {[
+                    { name: 'デバッグ雑魚', hp: 10, exp: 50, bonus: 1 },
+                    { name: 'デバッグボス', hp: 200, exp: 500, bonus: 10 },
+                    { name: 'テスト用強敵', hp: 500, exp: 1000, bonus: 20 }
+                  ].map(enemy => (
+                    <button
+                      key={enemy.name}
+                      onClick={() => {
+                        if (gameState.cheatAddEnemyToRematch({
+                          name: enemy.name,
+                          hp: enemy.hp,
+                          expReward: enemy.exp,
+                          submissionBonus: enemy.bonus,
+                          description: `デバッグ用の敵 (HP:${enemy.hp})`
+                        })) {
+                          setActionMessage(`${enemy.name}を追加しました！`);
+                          setTimeout(() => setActionMessage(''), 2000);
+                          refresh();
+                        }
+                      }}
+                      style={{
+                        padding: '0.5rem',
+                        background: '#6c757d',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      {enemy.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {currentView === 'log' && (
             <EventLog events={eventLogs} />
           )}
@@ -524,7 +1113,7 @@ export default function GameMain() {
           )}
 
           {/* 進級判定状況 */}
-          <div>
+          <div style={{ marginBottom: '1rem' }}>
             <h4 style={{ margin: '0 0 0.5rem 0', color: '#2d3748' }}>進級状況</h4>
             {(() => {
               const advancement = gameState.canAdvanceToNextSemester();
@@ -551,6 +1140,38 @@ export default function GameMain() {
               );
             })()}
           </div>
+
+          {/* デバッグ情報 (開発時のみ) */}
+          {process.env.NODE_ENV === 'development' && (
+            <div style={{ 
+              marginTop: '1rem',
+              padding: '0.5rem',
+              background: '#f7fafc',
+              borderRadius: 4,
+              border: '1px solid #e2e8f0'
+            }}>
+              <div style={{ fontSize: '0.75rem', color: '#4a5568' }}>
+                管理者モード: /admin または #admin でアクセス
+              </div>
+            </div>
+          )}
+
+          {/* 管理者ステータス表示 */}
+          {gameState.isAdmin && (
+            <div>
+              <div style={{
+                background: '#e53e3e',
+                color: 'white',
+                padding: '0.75rem',
+                borderRadius: 6,
+                textAlign: 'center',
+                fontSize: '0.875rem',
+                fontWeight: 'bold'
+              }}>
+                🔧 ADMIN MODE ACTIVE
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

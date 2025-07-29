@@ -81,6 +81,10 @@ class GameState {
 
     // 撃破した敵のリスト（再戦用）
     this.defeatedEnemies = [];
+
+    // 管理者機能
+    this.isAdmin = false;
+    this.adminPassword = 'kosen2025'; // 管理者パスワード
   }
 
   // 好感度変更メソッド
@@ -277,7 +281,8 @@ class GameState {
       playerSkills: this.playerSkills,
       flags: Array.from(this.flags),
       choiceHistory: this.choiceHistory,
-      defeatedEnemies: this.defeatedEnemies
+      defeatedEnemies: this.defeatedEnemies,
+      isAdmin: this.isAdmin
     };
   }
 
@@ -292,6 +297,7 @@ class GameState {
     this.flags = new Set(saveData.flags || []);
     this.choiceHistory = saveData.choiceHistory || [];
     this.defeatedEnemies = saveData.defeatedEnemies || [];
+    this.isAdmin = saveData.isAdmin || false;
   }
 
   // 章システム
@@ -475,6 +481,198 @@ class GameState {
       return true;
     }
     return false;
+  }
+
+  // ローカルストレージにセーブ
+  saveToLocalStorage(slotName = 'default') {
+    try {
+      const saveData = this.saveData();
+      saveData.savedAt = Date.now();
+      saveData.playerName = '高専生'; // 将来的にプレイヤー名設定機能追加予定
+      saveData.chapterTitle = `第${this.currentChapter}章`;
+      
+      localStorage.setItem(`kosenRPG_save_${slotName}`, JSON.stringify(saveData));
+      console.log(`ゲームデータをスロット "${slotName}" に保存しました`);
+      return true;
+    } catch (error) {
+      console.error('セーブに失敗しました:', error);
+      return false;
+    }
+  }
+
+  // ローカルストレージからロード
+  loadFromLocalStorage(slotName = 'default') {
+    try {
+      const savedData = localStorage.getItem(`kosenRPG_save_${slotName}`);
+      if (!savedData) {
+        console.log(`スロット "${slotName}" にセーブデータが見つかりません`);
+        return false;
+      }
+      
+      const saveData = JSON.parse(savedData);
+      this.loadData(saveData);
+      
+      // 章データが存在しない場合は初期化
+      if (!this.chapterEvents) {
+        this.initializeChapter(this.currentChapter);
+      }
+      
+      console.log(`スロット "${slotName}" からゲームデータを読み込みました`);
+      return true;
+    } catch (error) {
+      console.error('ロードに失敗しました:', error);
+      return false;
+    }
+  }
+
+  // セーブデータ一覧を取得
+  static getSaveDataList() {
+    const saves = [];
+    const prefix = 'kosenRPG_save_';
+    
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) {
+        try {
+          const slotName = key.replace(prefix, '');
+          const data = JSON.parse(localStorage.getItem(key));
+          saves.push({
+            slotName: slotName,
+            savedAt: data.savedAt,
+            playerName: data.playerName || '高専生',
+            chapterTitle: data.chapterTitle || `第${data.currentChapter || 1}章`,
+            level: data.playerStats?.level || 1,
+            progress: `進行度: ${data.chapterProgress || 0}/${data.chapterEvents?.length || 10}`
+          });
+        } catch (error) {
+          console.error(`セーブデータ "${key}" の読み込みでエラー:`, error);
+        }
+      }
+    }
+    
+    // 保存日時でソート（新しい順）
+    saves.sort((a, b) => b.savedAt - a.savedAt);
+    return saves;
+  }
+
+  // セーブデータを削除
+  static deleteSaveData(slotName) {
+    try {
+      localStorage.removeItem(`kosenRPG_save_${slotName}`);
+      console.log(`スロット "${slotName}" のセーブデータを削除しました`);
+      return true;
+    } catch (error) {
+      console.error('セーブデータ削除に失敗しました:', error);
+      return false;
+    }
+  }
+
+  // 管理者認証
+  authenticateAdmin(password) {
+    if (password === this.adminPassword) {
+      this.isAdmin = true;
+      console.log('管理者モードが有効になりました');
+      return true;
+    } else {
+      console.log('管理者パスワードが間違っています');
+      return false;
+    }
+  }
+
+  // 管理者権限を無効化
+  disableAdmin() {
+    this.isAdmin = false;
+    console.log('管理者モードを無効にしました');
+  }
+
+  // チート機能: ステータス最大化
+  cheatMaxStats() {
+    if (!this.isAdmin) return false;
+    
+    this.playerStats = {
+      ...this.playerStats,
+      hp: 999,
+      sp: 999,
+      submission: 999,
+      theory: 999,
+      social: 999,
+      stress: 0,
+      money: 999999,
+      level: 99,
+      maxHP: 999,
+      maxSP: 999
+    };
+    console.log('チート: ステータス最大化完了');
+    return true;
+  }
+
+  // チート機能: 全章イベント完了
+  cheatCompleteAllEvents() {
+    if (!this.isAdmin) return false;
+    
+    if (this.chapterEvents) {
+      this.chapterEvents.forEach(event => {
+        event.completed = true;
+      });
+      this.chapterProgress = this.chapterEvents.length;
+    }
+    console.log('チート: 全イベント完了');
+    return true;
+  }
+
+  // チート機能: 全NPC好感度最大
+  cheatMaxAffection() {
+    if (!this.isAdmin) return false;
+    
+    Object.keys(this.npcs).forEach(npcName => {
+      this.npcs[npcName].affection = 128;
+    });
+    console.log('チート: 全NPC好感度最大化完了');
+    return true;
+  }
+
+  // チート機能: イベント進行リセット
+  cheatResetChapter() {
+    if (!this.isAdmin) return false;
+    
+    this.chapterProgress = 0;
+    if (this.chapterEvents) {
+      this.chapterEvents.forEach(event => {
+        event.completed = false;
+      });
+    }
+    console.log('チート: 章進行リセット完了');
+    return true;
+  }
+
+  // チート機能: レベル設定
+  cheatSetLevel(level) {
+    if (!this.isAdmin) return false;
+    
+    this.playerStats.level = Math.max(1, Math.min(99, level));
+    this.playerStats.experience = 0;
+    console.log(`チート: レベルを${this.playerStats.level}に設定`);
+    return true;
+  }
+
+  // チート機能: 敵を再戦リストに追加
+  cheatAddEnemyToRematch(enemyData) {
+    if (!this.isAdmin) return false;
+    
+    const enemy = {
+      name: enemyData.name || 'デバッグ敵',
+      hp: enemyData.hp || 50,
+      maxHP: enemyData.hp || 50,
+      expReward: enemyData.expReward || 100,
+      submissionBonus: enemyData.submissionBonus || 2,
+      description: enemyData.description || 'デバッグ用の敵',
+      defeatedCount: 1,
+      firstDefeatedAt: Date.now()
+    };
+    
+    this.defeatedEnemies.push(enemy);
+    console.log(`チート: 敵 "${enemy.name}" を再戦リストに追加`);
+    return true;
   }
 }
 
