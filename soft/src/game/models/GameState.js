@@ -86,6 +86,20 @@ class GameState {
     this.isAdmin = false;
     this.adminPasswordHash = 'mnsd2025x'; 
     
+    // ワークスペース監視システム
+    this.workspaceMonitoring = {
+      sessions: new Map(), // sessionId -> { playerId, startTime, lastActivity, currentView, suspiciousActivity }
+      playerCount: 0,
+      adminSessions: new Set(),
+      securityLogs: [],
+      maxSessions: 100, // 最大同時接続数
+      sessionTimeout: 30 * 60 * 1000, // 30分でタイムアウト
+      suspiciousThreshold: 5 // 不正行為の閾値
+    };
+    
+    // セッション初期化
+    this.initializePlayerSession();
+    
     // ショップシステム
     this.shopItems = [
       {
@@ -363,7 +377,7 @@ class GameState {
       research: 8,
       parttime: 5,
       social: 5,
-      rest: 0  // 休息はSP消費なし
+      rest: 0   // 休息はSP消費なし
     };
     
     const requiredSP = spRequirements[actionType] || 0;
@@ -401,7 +415,7 @@ class GameState {
 
     const result = actions[actionType] ? actions[actionType]() : '無効な行動です。';
     
-    // ランダムイベント発生判定（20%の確率）
+    // 通常のランダムイベント発生判定（20%の確率）
     let randomEventMessage = '';
     if (Math.random() < 0.2) {
       const randomEvent = this.triggerRandomEvent();
@@ -809,8 +823,14 @@ class GameState {
     const hash = password === 'minusead' ? 'mnsd2025x' : password + 'x';
     if (hash === this.adminPasswordHash) {
       this.isAdmin = true;
+      
+      // セッションを管理者として記録
+      this.markAsAdminSession();
+      
       return true;
     } else {
+      // 認証失敗を記録
+      this.detectSuspiciousActivity('failed_admin_auth', { password: '***' });
       return false;
     }
   }
@@ -818,6 +838,11 @@ class GameState {
   // 管理者権限を無効化
   disableAdmin() {
     this.isAdmin = false;
+    // 管理者セッションから削除
+    this.workspaceMonitoring.adminSessions.delete(this.currentSessionId);
+    this.logSecurityEvent('admin_logout', {
+      sessionId: this.currentSessionId
+    });
   }
 
   // チート機能: ステータス最大化
@@ -1187,29 +1212,583 @@ class GameState {
     return { occurred: false };
   }
 
-  // ランダムイベント発生判定
-  triggerRandomEvent() {
-    const events = this.getRandomEvents();
-    const totalProbability = Math.random();
-    let cumulativeProbability = 0;
+  // === 自由行動ランダムイベントシステム ===
 
-    for (const event of events) {
-      cumulativeProbability += event.probability;
-      if (totalProbability <= cumulativeProbability) {
-        // イベント発生
-        this.changeStats(event.effect);
-        
-        // イベントログに記録
-        this.flags.add(`random_event_${event.id}_${Date.now()}`);
-        
-        return {
-          occurred: true,
-          event: event
-        };
+  // 自由行動時の選択イベント一覧
+  getFreeActionChoiceEvents() {
+    return [
+      {
+        id: 'campus_exploration',
+        name: 'キャンパス探索',
+        description: '校内を散策していると...',
+        choices: [
+          { 
+            id: 'library_visit', 
+            name: '図書館に向かう', 
+            effect: { theory: 3, sp: -2 },
+            message: '静かな図書館で集中して勉強できました'
+          },
+          { 
+            id: 'lab_visit', 
+            name: '研究室を覗く', 
+            effect: { theory: 2, social: 2, sp: -3 },
+            message: '先輩と研究について語り合いました'
+          },
+          { 
+            id: 'cafeteria_break', 
+            name: '学食で休憩', 
+            effect: { stress: -3, money: -100, hp: 5 },
+            message: '美味しい食事でリフレッシュできました'
+          }
+        ]
+      },
+      {
+        id: 'study_group_encounter',
+        name: '勉強グループとの出会い',
+        description: '廊下で同級生が勉強について話している...',
+        choices: [
+          { 
+            id: 'join_discussion', 
+            name: '議論に参加する', 
+            effect: { theory: 4, social: 3, sp: -5 },
+            message: '活発な議論で理解が深まりました'
+          },
+          { 
+            id: 'listen_quietly', 
+            name: 'そっと聞く', 
+            effect: { theory: 2, stress: 1 },
+            message: '有益な情報を得ることができました'
+          },
+          { 
+            id: 'offer_help', 
+            name: '手助けを申し出る', 
+            effect: { social: 4, submission: 2, sp: -3 },
+            message: '皆に感謝され、充実感を得ました'
+          }
+        ]
+      },
+      {
+        id: 'equipment_problem',
+        name: '機材トラブル発生',
+        description: '実習で使う機材に問題が...',
+        choices: [
+          { 
+            id: 'fix_yourself', 
+            name: '自分で修理する', 
+            effect: { theory: 5, submission: 3, stress: 2 },
+            message: '修理成功！技術力が向上しました'
+          },
+          { 
+            id: 'ask_teacher', 
+            name: '先生に相談', 
+            effect: { social: 2, theory: 1 },
+            message: '先生から丁寧に教わりました'
+          },
+          { 
+            id: 'team_solution', 
+            name: 'チームで解決', 
+            effect: { social: 4, theory: 2, submission: 1 },
+            message: 'チームワークで問題を解決しました'
+          }
+        ]
+      },
+      {
+        id: 'senior_advice',
+        name: '先輩からのアドバイス',
+        description: '先輩が何かアドバイスをくれそう...',
+        choices: [
+          { 
+            id: 'career_advice', 
+            name: '進路について聞く', 
+            effect: { theory: 3, social: 2, stress: -2 },
+            message: '将来への道筋が見えてきました'
+          },
+          { 
+            id: 'study_tips', 
+            name: '勉強法を教わる', 
+            effect: { submission: 4, theory: 2 },
+            message: '効率的な勉強方法を学びました'
+          },
+          { 
+            id: 'life_balance', 
+            name: '学生生活について', 
+            effect: { stress: -4, social: 3, sp: 5 },
+            message: '心の支えになる言葉をもらいました'
+          }
+        ]
+      },
+      {
+        id: 'club_activity',
+        name: 'サークル活動参加',
+        description: 'サークルから誘いが来ました...',
+        choices: [
+          { 
+            id: 'technical_club', 
+            name: '技術系サークル', 
+            effect: { theory: 6, social: 2, sp: -4 },
+            message: '技術的な知識を深めることができました'
+          },
+          { 
+            id: 'sports_club', 
+            name: '運動系サークル', 
+            effect: { hp: 10, stress: -5, social: 4, sp: -6 },
+            message: '身体を動かしてリフレッシュしました'
+          },
+          { 
+            id: 'cultural_club', 
+            name: '文化系サークル', 
+            effect: { social: 5, stress: -3, theory: 1 },
+            message: '新しい趣味を見つけることができました'
+          }
+        ]
+      },
+      {
+        id: 'mysterious_encounter',
+        name: '謎めいた出会い',
+        description: '校内で不思議な人物に出会いました...',
+        isBattle: true,
+        battleProbability: 0.3, // 30%の確率で戦闘
+        choices: [
+          { 
+            id: 'approach_cautiously', 
+            name: '慎重に近づく', 
+            effect: { theory: 2, social: 1 },
+            message: '興味深い話を聞くことができました',
+            battleEnemy: { 
+              name: '謎の挑戦者', 
+              hp: 45, 
+              maxHP: 45, 
+              expReward: 80, 
+              submissionBonus: 2,
+              description: '正体不明だが強力な相手'
+            }
+          },
+          { 
+            id: 'ignore_and_leave', 
+            name: '無視して立ち去る', 
+            effect: { stress: 1 },
+            message: '何事もなく過ぎ去りました'
+          },
+          { 
+            id: 'confront_directly', 
+            name: '直接話しかける', 
+            effect: { social: 3, stress: 2 },
+            message: '勇気を出して良かったです',
+            battleEnemy: { 
+              name: '実力テスト', 
+              hp: 60, 
+              maxHP: 60, 
+              expReward: 120, 
+              submissionBonus: 3,
+              description: '実力を試すための戦い'
+            }
+          }
+        ]
+      }
+    ];
+  }
+
+  // 自由行動時のランダム選択イベント発生
+  triggerFreeActionChoiceEvent() {
+    const events = this.getFreeActionChoiceEvents();
+    const randomEvent = events[Math.floor(Math.random() * events.length)];
+    
+    return {
+      occurred: true,
+      event: randomEvent
+    };
+  }
+
+  // 自由行動選択イベント処理
+  processFreeActionChoice(eventId, choiceId) {
+    const events = this.getFreeActionChoiceEvents();
+    const event = events.find(e => e.id === eventId);
+    
+    if (!event) {
+      return { success: false, message: '選択イベントが見つかりません' };
+    }
+
+    const choice = event.choices.find(c => c.id === choiceId);
+    if (!choice) {
+      return { success: false, message: '選択肢が見つかりません' };
+    }
+
+    // 戦闘発生判定
+    let battleTriggered = false;
+    let battleEnemy = null;
+
+    if (event.isBattle && choice.battleEnemy) {
+      const battleChance = Math.random();
+      if (battleChance < (event.battleProbability || 0.2)) {
+        battleTriggered = true;
+        battleEnemy = choice.battleEnemy;
       }
     }
 
-    return { occurred: false };
+    // 選択効果を適用（戦闘が発生しない場合）
+    if (!battleTriggered && choice.effect) {
+      this.changeStats(choice.effect);
+    }
+
+    // フラグ追加
+    this.flags.add(`free_action_choice_${eventId}_${choiceId}_${Date.now()}`);
+
+    return { 
+      success: true, 
+      message: choice.message,
+      effect: choice.effect,
+      battleTriggered: battleTriggered,
+      battleEnemy: battleEnemy
+    };
+  }
+
+  // ======================================
+  // ワークスペース監視システム
+  // ======================================
+
+  /**
+   * プレイヤーセッションを初期化
+   */
+  initializePlayerSession() {
+    // ユニークなセッションIDを生成
+    this.currentSessionId = this.generateSessionId();
+    
+    // プレイヤーIDを生成（ブラウザフィンガープリント + ランダム要素）
+    this.currentPlayerId = this.generatePlayerId();
+    
+    // セッション情報を登録
+    this.workspaceMonitoring.sessions.set(this.currentSessionId, {
+      playerId: this.currentPlayerId,
+      startTime: Date.now(),
+      lastActivity: Date.now(),
+      currentView: 'status',
+      suspiciousActivity: 0,
+      userAgent: navigator.userAgent,
+      screenInfo: `${screen.width}x${screen.height}`,
+      ipFingerprint: this.getIPFingerprint()
+    });
+    
+    this.workspaceMonitoring.playerCount++;
+    
+    // セッション開始ログ
+    this.logSecurityEvent('session_start', {
+      sessionId: this.currentSessionId,
+      playerId: this.currentPlayerId
+    });
+    
+    // 定期的なセッションクリーンアップを開始
+    this.startSessionCleanup();
+  }
+
+  /**
+   * セッションIDを生成
+   */
+  generateSessionId() {
+    return 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  /**
+   * プレイヤーIDを生成（ブラウザフィンガープリンティング）
+   */
+  generatePlayerId() {
+    const fingerprint = [
+      navigator.userAgent,
+      navigator.language,
+      screen.width + 'x' + screen.height,
+      new Date().getTimezoneOffset(),
+      navigator.platform,
+      navigator.cookieEnabled ? '1' : '0'
+    ].join('|');
+    
+    // 簡単なハッシュ生成
+    let hash = 0;
+    for (let i = 0; i < fingerprint.length; i++) {
+      const char = fingerprint.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // 32bit integer
+    }
+    
+    return 'player_' + Math.abs(hash).toString(36) + '_' + Date.now().toString(36).substr(-4);
+  }
+
+  /**
+   * IPフィンガープリントを取得（近似）
+   */
+  getIPFingerprint() {
+    // WebRTCを利用したローカルIP取得（簡易版）
+    return 'ip_' + Math.random().toString(36).substr(2, 8);
+  }
+
+  /**
+   * セキュリティイベントをログに記録
+   */
+  logSecurityEvent(eventType, data) {
+    const logEntry = {
+      timestamp: Date.now(),
+      type: eventType,
+      sessionId: this.currentSessionId,
+      playerId: this.currentPlayerId,
+      data: data
+    };
+    
+    this.workspaceMonitoring.securityLogs.push(logEntry);
+    
+    // ログサイズ制限（最新1000件まで）
+    if (this.workspaceMonitoring.securityLogs.length > 1000) {
+      this.workspaceMonitoring.securityLogs = this.workspaceMonitoring.securityLogs.slice(-1000);
+    }
+  }
+
+  /**
+   * 現在のビューを更新
+   */
+  updateCurrentView(viewName) {
+    if (this.workspaceMonitoring.sessions.has(this.currentSessionId)) {
+      const session = this.workspaceMonitoring.sessions.get(this.currentSessionId);
+      session.currentView = viewName;
+      session.lastActivity = Date.now();
+      
+      this.logSecurityEvent('view_change', { 
+        from: session.currentView, 
+        to: viewName 
+      });
+    }
+  }
+
+  /**
+   * 不正行為を検知・記録
+   */
+  detectSuspiciousActivity(activityType, details) {
+    if (!this.workspaceMonitoring.sessions.has(this.currentSessionId)) return;
+    
+    const session = this.workspaceMonitoring.sessions.get(this.currentSessionId);
+    session.suspiciousActivity++;
+    
+    this.logSecurityEvent('suspicious_activity', {
+      type: activityType,
+      details: details,
+      totalSuspicious: session.suspiciousActivity
+    });
+    
+    // 不正行為が閾値を超えた場合
+    if (session.suspiciousActivity >= this.workspaceMonitoring.suspiciousThreshold) {
+      this.logSecurityEvent('security_alert', {
+        reason: 'excessive_suspicious_activity',
+        count: session.suspiciousActivity
+      });
+    }
+  }
+
+  /**
+   * 管理者セッションとして記録
+   */
+  markAsAdminSession() {
+    this.workspaceMonitoring.adminSessions.add(this.currentSessionId);
+    this.logSecurityEvent('admin_access', {
+      sessionId: this.currentSessionId
+    });
+  }
+
+  /**
+   * セッションクリーンアップを開始
+   */
+  startSessionCleanup() {
+    if (this.sessionCleanupInterval) {
+      clearInterval(this.sessionCleanupInterval);
+    }
+    
+    this.sessionCleanupInterval = setInterval(() => {
+      this.cleanupExpiredSessions();
+    }, 5 * 60 * 1000); // 5分ごとにクリーンアップ
+  }
+
+  /**
+   * 期限切れセッションをクリーンアップ
+   */
+  cleanupExpiredSessions() {
+    const now = Date.now();
+    const expiredSessions = [];
+    
+    for (const [sessionId, session] of this.workspaceMonitoring.sessions) {
+      if (now - session.lastActivity > this.workspaceMonitoring.sessionTimeout) {
+        expiredSessions.push(sessionId);
+      }
+    }
+    
+    expiredSessions.forEach(sessionId => {
+      this.workspaceMonitoring.sessions.delete(sessionId);
+      this.workspaceMonitoring.adminSessions.delete(sessionId);
+      this.workspaceMonitoring.playerCount--;
+      
+      this.logSecurityEvent('session_timeout', { sessionId });
+    });
+  }
+
+  /**
+   * ワークスペース監視統計を取得（管理者専用）
+   */
+  getWorkspaceStats() {
+    if (!this.isAdmin) {
+      return { error: 'Unauthorized access' };
+    }
+    
+    this.cleanupExpiredSessions(); // 最新の状態に更新
+    
+    const activeSessions = Array.from(this.workspaceMonitoring.sessions.values());
+    const adminSessionCount = this.workspaceMonitoring.adminSessions.size;
+    const regularSessionCount = activeSessions.length - adminSessionCount;
+    
+    // 不正行為統計
+    const suspiciousStats = {
+      totalSuspiciousActivities: this.workspaceMonitoring.securityLogs.filter(log => 
+        log.type === 'suspicious_activity'
+      ).length,
+      playersWithSuspiciousActivity: activeSessions.filter(session => 
+        session.suspiciousActivity > 0
+      ).length,
+      highRiskPlayers: activeSessions.filter(session => 
+        session.suspiciousActivity >= this.workspaceMonitoring.suspiciousThreshold
+      ).length
+    };
+    
+    // セッション詳細
+    const sessionDetails = activeSessions.map(session => ({
+      sessionId: session.playerId, // セキュリティのため実際のセッションIDは隠す
+      startTime: new Date(session.startTime).toLocaleString('ja-JP'),
+      lastActivity: new Date(session.lastActivity).toLocaleString('ja-JP'),
+      currentView: session.currentView,
+      suspiciousActivity: session.suspiciousActivity,
+      isAdmin: this.workspaceMonitoring.adminSessions.has(session.sessionId),
+      userAgent: session.userAgent.substring(0, 50) + '...', // セキュリティのため短縮
+      screenInfo: session.screenInfo
+    }));
+    
+    // 最近のセキュリティログ
+    const recentLogs = this.workspaceMonitoring.securityLogs
+      .slice(-50) // 最新50件
+      .map(log => ({
+        timestamp: new Date(log.timestamp).toLocaleString('ja-JP'),
+        type: log.type,
+        playerId: log.playerId,
+        details: log.data
+      }));
+    
+    return {
+      overview: {
+        totalActivePlayers: this.workspaceMonitoring.playerCount,
+        adminSessions: adminSessionCount,
+        regularSessions: regularSessionCount,
+        maxSessions: this.workspaceMonitoring.maxSessions,
+        sessionTimeout: this.workspaceMonitoring.sessionTimeout / (60 * 1000) + ' minutes'
+      },
+      suspiciousActivity: suspiciousStats,
+      activeSessions: sessionDetails,
+      recentSecurityLogs: recentLogs,
+      systemHealth: {
+        memoryUsage: this.workspaceMonitoring.sessions.size,
+        logSize: this.workspaceMonitoring.securityLogs.length,
+        uptimeHours: Math.floor((Date.now() - (activeSessions[0]?.startTime || Date.now())) / (1000 * 60 * 60))
+      }
+    };
+  }
+
+  /**
+   * 特定プレイヤーの詳細情報を取得（管理者専用）
+   */
+  getPlayerDetails(playerId) {
+    if (!this.isAdmin) {
+      return { error: 'Unauthorized access' };
+    }
+    
+    // プレイヤーのセッション情報を検索
+    let targetSession = null;
+    let targetSessionId = null;
+    
+    for (const [sessionId, session] of this.workspaceMonitoring.sessions) {
+      if (session.playerId === playerId) {
+        targetSession = session;
+        targetSessionId = sessionId;
+        break;
+      }
+    }
+    
+    if (!targetSession) {
+      return { error: 'Player not found' };
+    }
+    
+    // そのプレイヤーに関連するログを取得
+    const playerLogs = this.workspaceMonitoring.securityLogs.filter(log => 
+      log.playerId === playerId
+    ).map(log => ({
+      timestamp: new Date(log.timestamp).toLocaleString('ja-JP'),
+      type: log.type,
+      details: log.data
+    }));
+    
+    return {
+      playerId: playerId,
+      sessionInfo: {
+        startTime: new Date(targetSession.startTime).toLocaleString('ja-JP'),
+        lastActivity: new Date(targetSession.lastActivity).toLocaleString('ja-JP'),
+        currentView: targetSession.currentView,
+        suspiciousActivity: targetSession.suspiciousActivity,
+        isAdmin: this.workspaceMonitoring.adminSessions.has(targetSessionId),
+        userAgent: targetSession.userAgent,
+        screenInfo: targetSession.screenInfo,
+        ipFingerprint: targetSession.ipFingerprint
+      },
+      activityLogs: playerLogs,
+      riskLevel: targetSession.suspiciousActivity >= this.workspaceMonitoring.suspiciousThreshold ? 'HIGH' : 
+                 targetSession.suspiciousActivity > 2 ? 'MEDIUM' : 'LOW'
+    };
+  }
+
+  /**
+   * セキュリティアクションを実行（管理者専用）
+   */
+  executeSecurityAction(action, targetPlayerId) {
+    if (!this.isAdmin) {
+      return { error: 'Unauthorized access' };
+    }
+    
+    switch (action) {
+      case 'kick_player':
+        // プレイヤーをキック（セッション削除）
+        for (const [sessionId, session] of this.workspaceMonitoring.sessions) {
+          if (session.playerId === targetPlayerId) {
+            this.workspaceMonitoring.sessions.delete(sessionId);
+            this.workspaceMonitoring.adminSessions.delete(sessionId);
+            this.workspaceMonitoring.playerCount--;
+            
+            this.logSecurityEvent('admin_kick', {
+              targetPlayerId: targetPlayerId,
+              adminSessionId: this.currentSessionId
+            });
+            
+            return { success: true, message: `Player ${targetPlayerId} has been kicked` };
+          }
+        }
+        return { error: 'Player not found' };
+        
+      case 'clear_suspicious':
+        // 不正行為カウンターをリセット
+        for (const [sessionId, session] of this.workspaceMonitoring.sessions) {
+          if (session.playerId === targetPlayerId) {
+            session.suspiciousActivity = 0;
+            
+            this.logSecurityEvent('admin_clear_suspicious', {
+              targetPlayerId: targetPlayerId,
+              adminSessionId: this.currentSessionId
+            });
+            
+            return { success: true, message: `Suspicious activity cleared for ${targetPlayerId}` };
+          }
+        }
+        return { error: 'Player not found' };
+        
+      default:
+        return { error: 'Unknown action' };
+    }
   }
 }
 

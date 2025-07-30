@@ -98,9 +98,8 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
         ];
         setBattleState(newState);
         
-        // 即座にバトル終了処理を呼び出す（setTimeout削除）
         if (onBattleEnd) {
-          console.log('バトル勝利！onBattleEndを呼び出します');
+          console.log('win.onBattleEnd.call');
           const expBonus = newState.isFinalExam ? newState.round * 50 : 0; // 期末試験はラウンドボーナス
           onBattleEnd('victory', {
             exp: (enemy?.expReward || 50) + expBonus,

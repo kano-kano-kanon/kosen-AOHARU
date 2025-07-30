@@ -28,7 +28,7 @@ export default function GameMain() {
     });
     return gs;
   });
-  const [currentView, setCurrentView] = useState('status'); // status, action, npcs, log, shop
+  const [currentView, setCurrentView] = useState('status'); // status, action, npcs, log, shop, workspace
   const [actionMessage, setActionMessage] = useState('');
   const [eventLogs, setEventLogs] = useState([
     { id: 1, message: '高専RPG「青春オーバードライブ」へようこそ！', timestamp: Date.now() },
@@ -39,6 +39,43 @@ export default function GameMain() {
   const [adminPassword, setAdminPassword] = useState('');
   const [showChoiceEvent, setShowChoiceEvent] = useState(false);
   const [currentChoiceEvent, setCurrentChoiceEvent] = useState(null);
+  const [showFreeActionEvent, setShowFreeActionEvent] = useState(false);
+  const [currentFreeActionEvent, setCurrentFreeActionEvent] = useState(null);
+  
+  // ワークスペース監視用の状態
+  const [workspaceStats, setWorkspaceStats] = useState(null);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [playerDetails, setPlayerDetails] = useState(null);
+  const [autoRefreshWorkspace, setAutoRefreshWorkspace] = useState(true);
+
+  // ワークスペース監視の自動更新
+  useEffect(() => {
+    let interval;
+    
+    if (currentView === 'workspace' && gameState.isAdmin && autoRefreshWorkspace) {
+      interval = setInterval(() => {
+        setWorkspaceStats(gameState.getWorkspaceStats());
+        
+        // 選択されたプレイヤーの詳細も更新
+        if (selectedPlayer) {
+          const details = gameState.getPlayerDetails(selectedPlayer);
+          if (!details.error) {
+            setPlayerDetails(details);
+          } else {
+            // プレイヤーが見つからない場合（キックされた等）は選択解除
+            setSelectedPlayer(null);
+            setPlayerDetails(null);
+          }
+        }
+      }, 5000); // 5秒ごとに更新
+    }
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [currentView, gameState.isAdmin, autoRefreshWorkspace, selectedPlayer]);
 
   // URLパス監視で /admin アクセスを検知
   useEffect(() => {
@@ -96,17 +133,17 @@ export default function GameMain() {
           
           // 現在のイベントを完了
           if (currentEvent && (currentEvent.type === 'battle' || currentEvent.type === 'boss' || currentEvent.type === 'final-boss')) {
-            console.log('イベント完了:', currentEvent.id);
-            console.log('完了前のイベント状態:', currentEvent);
+            console.log('event end:', currentEvent.id);
+            console.log('befor state:', currentEvent);
             gameState.completeChapterEvent(currentEvent.id);
             
             // 完了後の状態を確認
             const updatedEvent = gameState.chapterEvents.find(e => e.id === currentEvent.id);
-            console.log('完了後のイベント状態:', updatedEvent);
+            console.log('after state:', updatedEvent);
             
             // 期末試験（final-boss）完了時の特別処理
             if (currentEvent.type === 'final-boss' && result === 'victory') {
-              console.log('期末試験完了！章進行をチェック...');
+              console.log('期末試験完了！章進行をチェック');
               
               // 章完了チェック
               const canAdvance = gameState.canAdvanceToNextChapter();
@@ -167,6 +204,19 @@ export default function GameMain() {
 
   // 行動処理
   const performAction = (actionType) => {
+    // 行動をゲームステートに記録（監視用）
+    gameState.logSecurityEvent('player_action', { action: actionType });
+    
+    // 短時間での連続行動を検知
+    const now = Date.now();
+    if (gameState.lastActionTime && now - gameState.lastActionTime < 1000) {
+      gameState.detectSuspiciousActivity('rapid_action', { 
+        action: actionType, 
+        interval: now - gameState.lastActionTime 
+      });
+    }
+    gameState.lastActionTime = now;
+    
     const result = gameState.performAction(actionType);
     setActionMessage(result);
     
@@ -260,6 +310,12 @@ export default function GameMain() {
   const startChapterEvent = () => {
     if (!currentEvent) return;
     
+    // イベント開始を監視システムに記録
+    gameState.logSecurityEvent('chapter_event_start', { 
+      eventId: currentEvent.id, 
+      eventType: currentEvent.type 
+    });
+    
     // 期末試験の場合は要件チェック
     if (currentEvent.id === 'finalExam') {
       const requirementCheck = gameState.checkEventRequirements('finalExam');
@@ -288,6 +344,29 @@ export default function GameMain() {
       // 選択イベントUI表示
       setCurrentChoiceEvent(currentEvent);
       setShowChoiceEvent(true);
+    } else if (currentEvent.type === 'free') {
+      // 自由行動フェーズ - ランダム選択イベント発生
+      const choiceEvent = gameState.triggerFreeActionChoiceEvent();
+      if (choiceEvent.occurred) {
+        setCurrentFreeActionEvent(choiceEvent.event);
+        setShowFreeActionEvent(true);
+      } else {
+        // 通常の自由行動完了
+        gameState.completeChapterEvent(currentEvent.id);
+        const message = `${currentEvent.name}を完了しました！自由な時間を過ごしました。`;
+        setActionMessage(message);
+        
+        setEventLogs(prev => [...prev, {
+          id: prev.length + 1,
+          message: message,
+          timestamp: Date.now()
+        }]);
+        
+        // オートセーブ実行
+        gameState.saveToLocalStorage('autosave');
+        
+        refresh();
+      }
     } else {
       // その他のイベント
       gameState.completeChapterEvent(currentEvent.id);
@@ -326,6 +405,67 @@ export default function GameMain() {
       // 選択イベント終了
       setShowChoiceEvent(false);
       setCurrentChoiceEvent(null);
+      
+      // オートセーブ実行
+      gameState.saveToLocalStorage('autosave');
+      
+      refresh();
+    } else {
+      setActionMessage(`❌ ${result.message}`);
+    }
+  };
+
+  // 自由行動選択イベント処理
+  const handleFreeActionChoice = (choiceId) => {
+    if (!currentFreeActionEvent) return;
+    
+    const result = gameState.processFreeActionChoice(currentFreeActionEvent.id, choiceId);
+    
+    if (result.success) {
+      let message = result.message;
+      
+      // 戦闘が発生した場合
+      if (result.battleTriggered && result.battleEnemy) {
+        message += '\n\n⚔️ 戦闘が発生しました！';
+        
+        // 章イベント完了処理（自由行動フェーズ完了）
+        const currentEvent = gameState.getCurrentChapterEvent();
+        if (currentEvent && currentEvent.type === 'free') {
+          gameState.completeChapterEvent(currentEvent.id);
+        }
+        
+        // バトルシステムに移行
+        gameState.startBattle(result.battleEnemy);
+        setShowFreeActionEvent(false);
+        setCurrentFreeActionEvent(null);
+        
+        setEventLogs(prev => [...prev, {
+          id: prev.length + 1,
+          message: message,
+          timestamp: Date.now()
+        }]);
+        
+        refresh();
+        return;
+      }
+      
+      setActionMessage(message);
+      
+      setEventLogs(prev => [...prev, {
+        id: prev.length + 1,
+        message: message,
+        timestamp: Date.now()
+      }]);
+      
+      // 章イベント完了処理（自由行動フェーズ完了）
+      const currentEvent = gameState.getCurrentChapterEvent();
+      if (currentEvent && currentEvent.type === 'free') {
+        gameState.completeChapterEvent(currentEvent.id);
+      }
+      
+      // 選択イベント終了
+      setShowFreeActionEvent(false);
+      setCurrentFreeActionEvent(null);
       
       // オートセーブ実行
       gameState.saveToLocalStorage('autosave');
@@ -483,11 +623,21 @@ export default function GameMain() {
               { key: 'shop', label: 'ショップ' },
               { key: 'rematch', label: '再戦' },
               { key: 'save', label: 'セーブ&ロード' },
-              { key: 'log', label: 'ログ' }
+              { key: 'log', label: 'ログ' },
+              ...(gameState.isAdmin ? [{ key: 'workspace', label: '🔍 監視' }] : [])
             ].map(tab => (
               <button
                 key={tab.key}
-                onClick={() => setCurrentView(tab.key)}
+                onClick={() => {
+                  setCurrentView(tab.key);
+                  // ビュー変更をゲームステートに通知
+                  gameState.updateCurrentView(tab.key);
+                  
+                  // ワークスペース監視画面を開いた場合は統計を取得
+                  if (tab.key === 'workspace' && gameState.isAdmin) {
+                    setWorkspaceStats(gameState.getWorkspaceStats());
+                  }
+                }}
                 style={{
                   padding: '0.5rem 1rem',
                   border: 'none',
@@ -1245,6 +1395,394 @@ export default function GameMain() {
           {currentView === 'log' && (
             <EventLog events={eventLogs} />
           )}
+
+          {currentView === 'workspace' && gameState.isAdmin && (
+            <div>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                marginBottom: '1.5rem',
+                padding: '1rem',
+                background: 'rgba(220, 53, 69, 0.1)',
+                borderRadius: 8,
+                border: '2px solid #dc3545'
+              }}>
+                <h3 style={{ margin: 0, color: '#dc3545' }}>
+                  🔍 ワークスペース監視システム
+                </h3>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.9rem', color: '#6c757d' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoRefreshWorkspace}
+                      onChange={(e) => setAutoRefreshWorkspace(e.target.checked)}
+                      style={{ marginRight: '0.25rem' }}
+                    />
+                    自動更新
+                  </label>
+                  <button
+                    onClick={() => {
+                      setWorkspaceStats(gameState.getWorkspaceStats());
+                      setSelectedPlayer(null);
+                      setPlayerDetails(null);
+                    }}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      background: '#28a745',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    🔄 更新
+                  </button>
+                </div>
+              </div>
+
+              {workspaceStats && (
+                <div style={{ display: 'grid', gap: '1.5rem' }}>
+                  {/* 概要統計 */}
+                  <div style={{
+                    background: '#f8f9fa',
+                    border: '2px solid #dee2e6',
+                    borderRadius: 8,
+                    padding: '1rem'
+                  }}>
+                    <h4 style={{ margin: '0 0 1rem 0', color: '#495057' }}>
+                      📊 接続状況概要
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+                      <div style={{ textAlign: 'center', padding: '0.75rem', background: '#e3f2fd', borderRadius: 6 }}>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1976d2' }}>
+                          {workspaceStats.overview.totalActivePlayers}
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: '#424242' }}>総接続数</div>
+                      </div>
+                      <div style={{ textAlign: 'center', padding: '0.75rem', background: '#fff3e0', borderRadius: 6 }}>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f57c00' }}>
+                          {workspaceStats.overview.adminSessions}
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: '#424242' }}>管理者</div>
+                      </div>
+                      <div style={{ textAlign: 'center', padding: '0.75rem', background: '#f3e5f5', borderRadius: 6 }}>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#7b1fa2' }}>
+                          {workspaceStats.overview.regularSessions}
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: '#424242' }}>一般ユーザー</div>
+                      </div>
+                      <div style={{ textAlign: 'center', padding: '0.75rem', background: '#ffebee', borderRadius: 6 }}>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#d32f2f' }}>
+                          {workspaceStats.suspiciousActivity.highRiskPlayers}
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: '#424242' }}>高リスク</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 不正行為統計 */}
+                  <div style={{
+                    background: '#fff8e1',
+                    border: '2px solid #ffb74d',
+                    borderRadius: 8,
+                    padding: '1rem'
+                  }}>
+                    <h4 style={{ margin: '0 0 1rem 0', color: '#e65100' }}>
+                      ⚠️ セキュリティ状況
+                    </h4>
+                    <div style={{ display: 'grid', gap: '0.5rem', fontSize: '0.9rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>総不正行為検知数:</span>
+                        <span style={{ fontWeight: 'bold', color: '#d84315' }}>
+                          {workspaceStats.suspiciousActivity.totalSuspiciousActivities}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>不正行為者数:</span>
+                        <span style={{ fontWeight: 'bold', color: '#f57c00' }}>
+                          {workspaceStats.suspiciousActivity.playersWithSuspiciousActivity}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>高リスクプレイヤー:</span>
+                        <span style={{ fontWeight: 'bold', color: '#d32f2f' }}>
+                          {workspaceStats.suspiciousActivity.highRiskPlayers}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* アクティブセッション一覧 */}
+                  <div style={{
+                    background: '#f8f9fa',
+                    border: '2px solid #dee2e6',
+                    borderRadius: 8,
+                    padding: '1rem'
+                  }}>
+                    <h4 style={{ margin: '0 0 1rem 0', color: '#495057' }}>
+                      👥 アクティブセッション ({workspaceStats.activeSessions.length}件)
+                    </h4>
+                    <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                      {workspaceStats.activeSessions.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '1rem', color: '#6c757d' }}>
+                          アクティブセッションがありません
+                        </div>
+                      ) : (
+                        workspaceStats.activeSessions.map((session, index) => (
+                          <div key={index} style={{
+                            background: session.isAdmin ? '#e8f5e8' : 
+                                       session.suspiciousActivity >= 5 ? '#ffebee' : 
+                                       session.suspiciousActivity > 2 ? '#fff3e0' : 'white',
+                            border: `1px solid ${session.isAdmin ? '#4caf50' : 
+                                                session.suspiciousActivity >= 5 ? '#f44336' : 
+                                                session.suspiciousActivity > 2 ? '#ff9800' : '#e0e0e0'}`,
+                            borderRadius: 6,
+                            padding: '0.75rem',
+                            marginBottom: '0.5rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => {
+                            setSelectedPlayer(session.sessionId);
+                            setPlayerDetails(gameState.getPlayerDetails(session.sessionId));
+                          }}
+                          onMouseOver={(e) => e.target.style.transform = 'scale(1.01)'}
+                          onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                              <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
+                                {session.isAdmin ? '👑 ' : '👤 '}
+                                Player {session.sessionId.substring(0, 8)}...
+                              </div>
+                              <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>
+                                {session.currentView}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#6c757d', marginBottom: '0.25rem' }}>
+                              接続: {session.startTime} | 最終活動: {session.lastActivity}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontSize: '0.8rem' }}>
+                                画面: {session.screenInfo}
+                              </div>
+                              {session.suspiciousActivity > 0 && (
+                                <div style={{
+                                  background: session.suspiciousActivity >= 5 ? '#f44336' : '#ff9800',
+                                  color: 'white',
+                                  padding: '0.125rem 0.375rem',
+                                  borderRadius: 8,
+                                  fontSize: '0.7rem'
+                                }}>
+                                  不正: {session.suspiciousActivity}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* プレイヤー詳細表示 */}
+                  {selectedPlayer && playerDetails && !playerDetails.error && (
+                    <div style={{
+                      background: '#e3f2fd',
+                      border: '2px solid #2196f3',
+                      borderRadius: 8,
+                      padding: '1rem'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <h4 style={{ margin: 0, color: '#1976d2' }}>
+                          🔍 プレイヤー詳細: {playerDetails.playerId.substring(0, 12)}...
+                        </h4>
+                        <button
+                          onClick={() => {
+                            setSelectedPlayer(null);
+                            setPlayerDetails(null);
+                          }}
+                          style={{
+                            background: '#6c757d',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: 4,
+                            padding: '0.25rem 0.5rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gap: '1rem' }}>
+                        {/* セッション情報 */}
+                        <div style={{ background: 'white', padding: '0.75rem', borderRadius: 6 }}>
+                          <h5 style={{ margin: '0 0 0.5rem 0', color: '#424242' }}>セッション情報</h5>
+                          <div style={{ fontSize: '0.9rem', color: '#616161' }}>
+                            <div>開始時刻: {playerDetails.sessionInfo.startTime}</div>
+                            <div>最終活動: {playerDetails.sessionInfo.lastActivity}</div>
+                            <div>現在のビュー: {playerDetails.sessionInfo.currentView}</div>
+                            <div>管理者: {playerDetails.sessionInfo.isAdmin ? 'はい' : 'いいえ'}</div>
+                            <div>リスクレベル: 
+                              <span style={{
+                                color: playerDetails.riskLevel === 'HIGH' ? '#d32f2f' : 
+                                      playerDetails.riskLevel === 'MEDIUM' ? '#f57c00' : '#388e3c',
+                                fontWeight: 'bold',
+                                marginLeft: '0.25rem'
+                              }}>
+                                {playerDetails.riskLevel}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 活動ログ */}
+                        <div style={{ background: 'white', padding: '0.75rem', borderRadius: 6 }}>
+                          <h5 style={{ margin: '0 0 0.5rem 0', color: '#424242' }}>
+                            最近の活動 ({playerDetails.activityLogs.length}件)
+                          </h5>
+                          <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                            {playerDetails.activityLogs.slice(-10).map((log, index) => (
+                              <div key={index} style={{
+                                fontSize: '0.8rem',
+                                padding: '0.25rem 0',
+                                borderBottom: index < 9 ? '1px solid #e0e0e0' : 'none',
+                                color: log.type === 'suspicious_activity' ? '#d32f2f' : '#616161'
+                              }}>
+                                <span style={{ fontWeight: 'bold' }}>{log.timestamp}</span> - {log.type}
+                                {log.details && (
+                                  <div style={{ marginLeft: '1rem', color: '#9e9e9e' }}>
+                                    {JSON.stringify(log.details)}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 管理アクション */}
+                        <div style={{ background: '#ffebee', padding: '0.75rem', borderRadius: 6 }}>
+                          <h5 style={{ margin: '0 0 0.5rem 0', color: '#d32f2f' }}>管理アクション</h5>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                              onClick={() => {
+                                if (confirm(`プレイヤー ${playerDetails.playerId} をキックしますか？`)) {
+                                  const result = gameState.executeSecurityAction('kick_player', playerDetails.playerId);
+                                  if (result.success) {
+                                    alert(result.message);
+                                    setWorkspaceStats(gameState.getWorkspaceStats());
+                                    setSelectedPlayer(null);
+                                    setPlayerDetails(null);
+                                  } else {
+                                    alert(result.error);
+                                  }
+                                }
+                              }}
+                              style={{
+                                background: '#d32f2f',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: 4,
+                                padding: '0.5rem',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem'
+                              }}
+                            >
+                              🚫 キック
+                            </button>
+                            <button
+                              onClick={() => {
+                                const result = gameState.executeSecurityAction('clear_suspicious', playerDetails.playerId);
+                                if (result.success) {
+                                  alert(result.message);
+                                  setPlayerDetails(gameState.getPlayerDetails(playerDetails.playerId));
+                                  setWorkspaceStats(gameState.getWorkspaceStats());
+                                } else {
+                                  alert(result.error);
+                                }
+                              }}
+                              style={{
+                                background: '#ff9800',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: 4,
+                                padding: '0.5rem',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem'
+                              }}
+                            >
+                              🧹 不正履歴クリア
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* セキュリティログ */}
+                  <div style={{
+                    background: '#f8f9fa',
+                    border: '2px solid #dee2e6',
+                    borderRadius: 8,
+                    padding: '1rem'
+                  }}>
+                    <h4 style={{ margin: '0 0 1rem 0', color: '#495057' }}>
+                      📋 最近のセキュリティログ
+                    </h4>
+                    <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.8rem' }}>
+                      {workspaceStats.recentSecurityLogs.map((log, index) => (
+                        <div key={index} style={{
+                          padding: '0.5rem',
+                          borderBottom: index < workspaceStats.recentSecurityLogs.length - 1 ? '1px solid #e0e0e0' : 'none',
+                          background: log.type === 'security_alert' ? '#ffebee' : 
+                                     log.type === 'admin_access' ? '#e8f5e8' : 'transparent'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                            <span style={{ fontWeight: 'bold' }}>{log.timestamp}</span>
+                            <span style={{
+                              background: log.type === 'security_alert' ? '#f44336' : 
+                                         log.type === 'admin_access' ? '#4caf50' : '#2196f3',
+                              color: 'white',
+                              padding: '0.125rem 0.375rem',
+                              borderRadius: 8,
+                              fontSize: '0.7rem'
+                            }}>
+                              {log.type}
+                            </span>
+                          </div>
+                          <div style={{ color: '#616161' }}>
+                            Player: {log.playerId?.substring(0, 8)}...
+                          </div>
+                          {log.details && (
+                            <div style={{ color: '#9e9e9e', marginTop: '0.25rem' }}>
+                              {JSON.stringify(log.details, null, 1)}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!workspaceStats && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '2rem',
+                  color: '#6c757d',
+                  background: '#f8f9fa',
+                  borderRadius: 8,
+                  border: '2px dashed #dee2e6'
+                }}>
+                  <p style={{ margin: 0, fontSize: '1.1rem' }}>🔄 データを読み込み中...</p>
+                  <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>
+                    更新ボタンをクリックして監視データを取得してください
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 右側：サイドバー */}
@@ -1545,6 +2083,110 @@ export default function GameMain() {
                 >
                   <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>
                     {choice.name}
+                  </div>
+                  {choice.effect && (
+                    <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
+                      効果: {Object.entries(choice.effect).map(([key, value]) => 
+                        `${key}${value > 0 ? '+' : ''}${value}`
+                      ).join(', ')}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 自由行動選択イベントモーダル */}
+      {showFreeActionEvent && currentFreeActionEvent && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: 12,
+            padding: '2rem',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)'
+          }}>
+            <h2 style={{ 
+              marginTop: 0, 
+              color: '#2d3748',
+              textAlign: 'center',
+              marginBottom: '1rem'
+            }}>
+              🎲 {currentFreeActionEvent.name}
+            </h2>
+            
+            <div style={{ 
+              marginBottom: '1.5rem',
+              color: '#4a5568',
+              textAlign: 'center',
+              lineHeight: '1.6',
+              background: '#f7fafc',
+              padding: '1rem',
+              borderRadius: 8,
+              border: '1px solid #e2e8f0'
+            }}>
+              {currentFreeActionEvent.description}
+            </div>
+
+            {currentFreeActionEvent.isBattle && (
+              <div style={{ 
+                marginBottom: '1rem',
+                color: '#d69e2e',
+                textAlign: 'center',
+                fontSize: '0.875rem',
+                fontWeight: 'bold'
+              }}>
+                ⚠️ 一部の選択肢では戦闘が発生する可能性があります
+              </div>
+            )}
+
+            <div style={{ 
+              marginBottom: '1.5rem',
+              color: '#2d3748',
+              textAlign: 'center',
+              fontWeight: 'bold'
+            }}>
+              どうしますか？
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {currentFreeActionEvent.choices?.map(choice => (
+                <button
+                  key={choice.id}
+                  onClick={() => handleFreeActionChoice(choice.id)}
+                  style={{
+                    padding: '1rem',
+                    background: choice.battleEnemy ? 
+                      'linear-gradient(135deg, #e53e3e 0%, #c53030 100%)' :
+                      'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    transition: 'transform 0.2s ease',
+                    textAlign: 'left'
+                  }}
+                  onMouseOver={(e) => e.target.style.transform = 'scale(1.02)'}
+                  onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+                >
+                  <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                    {choice.name}
+                    {choice.battleEnemy && ' ⚔️'}
                   </div>
                   {choice.effect && (
                     <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>

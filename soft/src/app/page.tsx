@@ -7,11 +7,11 @@ export default function Page() {
   const [isStarted, setIsStarted] = useState(false);
 
   const handleStart = () => {
-    console.log('ゲーム開始ボタンがクリックされました');
+    console.log('push.start button');
     setIsStarted(true);
   };
 
-  console.log('現在の状態:', { isStarted });
+  console.log('state:', { isStarted });
 
   return (
     <main>
