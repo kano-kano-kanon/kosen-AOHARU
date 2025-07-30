@@ -9,6 +9,7 @@ import GameUI from './GameUI';
 import NPCStatus from './NPCStatus';
 import EventLog from './EventLog';
 import BattleSystem from './BattleSystem';
+import { getAllTutorialLogs } from '../data/tutorialLogs';
 
 export default function GameMain() {
   const [gameState, setGameState] = useState(() => {
@@ -24,7 +25,11 @@ export default function GameMain() {
     console.log('GameMain初期化:', {
       autoRestored: hasAutoSave,
       chapterEvents: gs.chapterEvents,
-      currentEvent: gs.getCurrentChapterEvent()
+      currentEvent: gs.getCurrentChapterEvent(),
+      gameVersion: gs.gameVersion,
+      enabledFeatures: Object.entries(gs.featureFlags)
+        .filter(([key, value]) => value)
+        .map(([key]) => key)
     });
     return gs;
   });
@@ -47,35 +52,6 @@ export default function GameMain() {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [playerDetails, setPlayerDetails] = useState(null);
   const [autoRefreshWorkspace, setAutoRefreshWorkspace] = useState(true);
-
-  // ワークスペース監視の自動更新
-  useEffect(() => {
-    let interval;
-    
-    if (currentView === 'workspace' && gameState.isAdmin && autoRefreshWorkspace) {
-      interval = setInterval(() => {
-        setWorkspaceStats(gameState.getWorkspaceStats());
-        
-        // 選択されたプレイヤーの詳細も更新
-        if (selectedPlayer) {
-          const details = gameState.getPlayerDetails(selectedPlayer);
-          if (!details.error) {
-            setPlayerDetails(details);
-          } else {
-            // プレイヤーが見つからない場合（キックされた等）は選択解除
-            setSelectedPlayer(null);
-            setPlayerDetails(null);
-          }
-        }
-      }, 5000); // 5秒ごとに更新
-    }
-    
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [currentView, gameState.isAdmin, autoRefreshWorkspace, selectedPlayer]);
 
   // URLパス監視で /admin アクセスを検知
   useEffect(() => {
@@ -204,19 +180,6 @@ export default function GameMain() {
 
   // 行動処理
   const performAction = (actionType) => {
-    // 行動をゲームステートに記録（監視用）
-    gameState.logSecurityEvent('player_action', { action: actionType });
-    
-    // 短時間での連続行動を検知
-    const now = Date.now();
-    if (gameState.lastActionTime && now - gameState.lastActionTime < 1000) {
-      gameState.detectSuspiciousActivity('rapid_action', { 
-        action: actionType, 
-        interval: now - gameState.lastActionTime 
-      });
-    }
-    gameState.lastActionTime = now;
-    
     const result = gameState.performAction(actionType);
     setActionMessage(result);
     
@@ -306,15 +269,32 @@ export default function GameMain() {
     refresh();
   };
 
+  // NPCイベント処理
+  const handleNPCEvent = (npcName) => {
+    const result = gameState.triggerNPCEvent(npcName);
+    
+    if (result.success) {
+      setActionMessage(`🎉 ${result.message}`);
+      
+      // ログに追加
+      const newLog = {
+        id: eventLogs.length + 1,
+        message: result.message,
+        timestamp: Date.now()
+      };
+      setEventLogs(prev => [...prev, newLog]);
+      
+      setTimeout(() => setActionMessage(''), 4000);
+      refresh();
+    } else {
+      setActionMessage(result.message);
+      setTimeout(() => setActionMessage(''), 3000);
+    }
+  };
+
   // 章イベント開始
   const startChapterEvent = () => {
     if (!currentEvent) return;
-    
-    // イベント開始を監視システムに記録
-    gameState.logSecurityEvent('chapter_event_start', { 
-      eventId: currentEvent.id, 
-      eventType: currentEvent.type 
-    });
     
     // 期末試験の場合は要件チェック
     if (currentEvent.id === 'finalExam') {
@@ -778,8 +758,10 @@ export default function GameMain() {
             <NPCStatus 
               npcs={gameState.npcs} 
               onInteract={interactWithNPC}
+              onNPCEvent={handleNPCEvent}
               playerSP={gameState.playerStats.sp}
               playerHP={gameState.playerStats.hp}
+              gameState={gameState}
             />
           )}
 
@@ -889,12 +871,101 @@ export default function GameMain() {
                         fontSize: '0.9rem'
                       }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{purchase.itemName}</span>
-                          <span>¥{purchase.price.toLocaleString()}</span>
+                          <span>{purchase.itemName || purchase.name || '不明なアイテム'}</span>
+                          <span>¥{(purchase.price || purchase.cost || 0).toLocaleString()}</span>
                         </div>
                         <div style={{ fontSize: '0.75rem', color: '#6c757d' }}>
-                          {new Date(purchase.purchaseDate).toLocaleString()}
+                          {new Date(purchase.purchaseDate || purchase.timestamp || Date.now()).toLocaleString()}
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ガチャセクション（機能フラグで制御） */}
+              {gameState.isFeatureEnabled('gachaSystem') && (
+                <div style={{ marginTop: '3rem' }}>
+                  <h4 style={{ marginBottom: '1rem', color: '#4a5568', borderBottom: '2px solid #f39c12', paddingBottom: '0.5rem' }}>
+                    🎰 ガチャシステム
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
+                    {[
+                      { type: 'normal', name: 'ノーマルガチャ', cost: 300, color: '#17a2b8', description: '基本的なアイテムが出現' },
+                      { type: 'premium', name: 'プレミアムガチャ', cost: 1500, color: '#6f42c1', description: 'レアアイテムの確率UP' },
+                      { 
+                        type: 'special', 
+                        name: 'スペシャルガチャ', 
+                        cost: 3000, 
+                        color: '#fd7e14', 
+                        description: gameState.isFeatureEnabled('superRareItems') 
+                          ? '伝説級・神話級アイテムが狙える！' 
+                          : 'エピック級アイテムが狙える！'
+                      }
+                    ].map(gacha => (
+                      <div key={gacha.type} style={{
+                        background: 'linear-gradient(145deg, #ffffff, #f8f9fa)',
+                        border: `3px solid ${gacha.color}`,
+                        borderRadius: 12,
+                        padding: '1.5rem',
+                        textAlign: 'center',
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                      }}>
+                        <h5 style={{ margin: '0 0 0.5rem 0', color: gacha.color, fontSize: '1.1rem' }}>
+                          {gacha.name}
+                        </h5>
+                        <p style={{ margin: '0 0 1rem 0', color: '#6c757d', fontSize: '0.9rem' }}>
+                          {gacha.description}
+                        </p>
+                        <div style={{ 
+                          background: gacha.color, 
+                          color: 'white', 
+                          padding: '0.5rem', 
+                          borderRadius: 8, 
+                          marginBottom: '1rem',
+                          fontWeight: 'bold'
+                        }}>
+                          ¥{gacha.cost.toLocaleString()}
+                        </div>
+                        <button
+                          onClick={() => {
+                            const result = gameState.performGacha(gacha.type);
+                            if (result.success) {
+                              setActionMessage(`🎉 ${result.message}`);
+                              setTimeout(() => setActionMessage(''), 4000);
+                              refresh();
+                            } else {
+                              alert(result.message);
+                            }
+                          }}
+                          disabled={gameState.playerStats.money < gacha.cost}
+                          style={{
+                            width: '100%',
+                            padding: '0.75rem',
+                            background: gameState.playerStats.money >= gacha.cost ? gacha.color : '#6c757d',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: 8,
+                            cursor: gameState.playerStats.money >= gacha.cost ? 'pointer' : 'not-allowed',
+                            fontWeight: 'bold',
+                            fontSize: '1rem'
+                          }}
+                        >
+                          {gameState.playerStats.money >= gacha.cost ? '🎰 ガチャを引く' : '💰 所持金不足'}
+                        </button>
+                        {gacha.type === 'special' && (
+                          <div style={{
+                            marginTop: '0.5rem',
+                            padding: '0.25rem 0.5rem',
+                            background: gameState.isFeatureEnabled('superRareItems') ? '#d4edda' : '#f8d7da',
+                            color: gameState.isFeatureEnabled('superRareItems') ? '#155724' : '#721c24',
+                            borderRadius: 4,
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold'
+                          }}>
+                           
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1389,11 +1460,370 @@ export default function GameMain() {
                   ))}
                 </div>
               </div>
+
+              {/* 機能フラグ管理セクション */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h4 style={{ marginBottom: '0.75rem', color: '#4a5568', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                  🚩 機能フラグ管理 (大規模アップデート用)
+                </h4>
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(2, 1fr)', 
+                  gap: '0.5rem',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                  padding: '0.5rem',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 6,
+                  background: '#f8f9fa'
+                }}>
+                  {Object.entries(gameState.getFeatureFlags()).map(([feature, enabled]) => (
+                    <div key={feature} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.5rem',
+                      background: enabled ? '#d4edda' : '#f8d7da',
+                      borderRadius: 4,
+                      border: `1px solid ${enabled ? '#c3e6cb' : '#f5c6cb'}`
+                    }}>
+                      <span style={{ 
+                        fontSize: '0.8rem', 
+                        fontWeight: 'bold',
+                        color: enabled ? '#155724' : '#721c24'
+                      }}>
+                        {feature}
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (gameState.toggleFeatureFlag(feature)) {
+                            setActionMessage(`${feature}を${gameState.featureFlags[feature] ? '有効' : '無効'}にしました`);
+                            setTimeout(() => setActionMessage(''), 2000);
+                            refresh();
+                          }
+                        }}
+                        style={{
+                          padding: '0.25rem 0.5rem',
+                          background: enabled ? '#dc3545' : '#28a745',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: 3,
+                          cursor: 'pointer',
+                          fontSize: '0.7rem',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {enabled ? 'OFF' : 'ON'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#6c757d' }}>
+                  ⚠️ 注意: 機能フラグの変更は既存プレイヤーのゲーム進行に影響する可能性があります
+                </div>
+                
+                {/* 機能フラグ強制更新 */}
+                <div style={{ marginTop: '1rem', padding: '1rem', background: '#fff3cd', border: '1px solid #ffeaa7', borderRadius: 4 }}>
+                  <h6 style={{ margin: '0 0 0.5rem 0', color: '#856404' }}>🔄 既存プレイヤー向け機能フラグ更新</h6>
+                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', color: '#856404' }}>
+                    既存のセーブデータを持つプレイヤーの機能フラグを最新のデフォルト設定に強制更新します。
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (confirm('既存プレイヤーの機能フラグを最新設定に更新しますか？\n\n通常機能は全て有効になり、チート系機能の設定は保持されます。')) {
+                        gameState.upgradeFeatureFlags();
+                        setActionMessage('機能フラグを最新設定に更新しました！');
+                        setTimeout(() => setActionMessage(''), 3000);
+                        refresh();
+                      }
+                    }}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      background: '#ffc107',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      fontSize: '0.8rem'
+                    }}
+                  >
+                    🚀 機能フラグを最新に更新
+                  </button>
+                </div>
+                
+                {/* ロールアウト計画表示 */}
+                <div style={{ marginTop: '1rem' }}>
+                  <h5 style={{ margin: '0.5rem 0', color: '#495057' }}>📋 段階的ロールアウト計画</h5>
+                  <div style={{ 
+                    maxHeight: '200px', 
+                    overflowY: 'auto',
+                    border: '1px solid #dee2e6',
+                    borderRadius: 4,
+                    background: '#ffffff'
+                  }}>
+                    {Object.entries(gameState.planFeatureRollout()).map(([phaseKey, phase]) => (
+                      <div key={phaseKey} style={{
+                        padding: '0.75rem',
+                        borderBottom: '1px solid #e9ecef',
+                        background: phase.riskLevel === 'high' ? '#fff3cd' : 
+                                   phase.riskLevel === 'medium' ? '#d4edda' : '#d1ecf1'
+                      }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                          {phase.name} ({phase.estimatedTime})
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#6c757d', marginBottom: '0.25rem' }}>
+                          リスク: {phase.riskLevel} | 機能: {phase.features.join(', ')}
+                        </div>
+                        {phase.status === 'completed' ? (
+                          <div style={{
+                            padding: '0.25rem 0.5rem',
+                            background: '#28a745',
+                            color: 'white',
+                            borderRadius: 3,
+                            fontSize: '0.7rem',
+                            textAlign: 'center'
+                          }}>
+                            ✅ 全機能有効
+                          </div>
+                        ) : phase.status === 'manual_only' ? (
+                          <div style={{
+                            padding: '0.25rem 0.5rem',
+                            background: '#dc3545',
+                            color: 'white',
+                            borderRadius: 3,
+                            fontSize: '0.7rem',
+                            textAlign: 'center'
+                          }}>
+                            🔒 手動有効化のみ
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              let enabledCount = 0;
+                              phase.features.forEach(feature => {
+                                if (gameState.enableFeatureSafely(feature, true)) {
+                                  enabledCount++;
+                                }
+                              });
+                              if (enabledCount > 0) {
+                                setActionMessage(`${phase.name}の${enabledCount}個の機能を有効化しました`);
+                                setTimeout(() => setActionMessage(''), 3000);
+                                refresh();
+                              }
+                            }}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              background: '#007bff',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: 3,
+                              cursor: 'pointer',
+                              fontSize: '0.7rem'
+                            }}
+                          >
+                            このフェーズを有効化
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* 章進行デバッグ情報 */}
+                <div style={{ marginTop: '1rem' }}>
+                  <h5 style={{ margin: '0.5rem 0', color: '#495057' }}>🔍 章進行デバッグ情報</h5>
+                  <div style={{ 
+                    background: '#f8f9fa',
+                    border: '1px solid #dee2e6',
+                    borderRadius: 4,
+                    padding: '1rem',
+                    fontSize: '0.85rem'
+                  }}>
+                    {(() => {
+                      const debugInfo = gameState.getChapterDebugInfo();
+                      return (
+                        <div>
+                          <div><strong>現在の章:</strong> {debugInfo.currentChapter}</div>
+                          <div><strong>進路選択:</strong> {debugInfo.playerPath || '未選択'}</div>
+                          <div><strong>完了イベント:</strong> {debugInfo.completedEvents}/{debugInfo.totalEvents}</div>
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <strong>機能フラグ状態:</strong>
+                            <ul style={{ marginTop: '0.25rem', paddingLeft: '1rem' }}>
+                              <li>第3章: {debugInfo.featureFlags.chapter3 ? '✅ 有効' : '❌ 無効'}</li>
+                              <li>第4章: {debugInfo.featureFlags.chapter4 ? '✅ 有効' : '❌ 無効'}</li>
+                              <li>第5章: {debugInfo.featureFlags.chapter5 ? '✅ 有効' : '❌ 無効'}</li>
+                            </ul>
+                          </div>
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <strong>進路別利用可能性:</strong>
+                            <ul style={{ marginTop: '0.25rem', paddingLeft: '1rem' }}>
+                              <li>第4章(高専): {debugInfo.pathAvailability?.chapter4_kosen ? '✅ 利用可能' : '❌ 利用不可'}</li>
+                              <li>第4章(大学): {debugInfo.pathAvailability?.chapter4_university ? '✅ 利用可能' : '❌ 利用不可'}</li>
+                              <li>第5章(高専): {debugInfo.pathAvailability?.chapter5_kosen ? '✅ 利用可能' : '❌ 利用不可'}</li>
+                              <li>第5章(大学): {debugInfo.pathAvailability?.chapter5_university ? '✅ 利用可能' : '❌ 利用不可'}</li>
+                            </ul>
+                          </div>
+                          {debugInfo.chapterEvents && debugInfo.chapterEvents.length > 0 && (
+                            <div style={{ marginTop: '0.5rem' }}>
+                              <strong>章イベント状況:</strong>
+                              <ul style={{ marginTop: '0.25rem', paddingLeft: '1rem' }}>
+                                {debugInfo.chapterEvents.map((event, index) => (
+                                  <li key={index}>
+                                    {event.completed ? '✅' : '⏳'} {event.name} ({event.type})
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => {
+                              console.log('章デバッグ情報:', debugInfo);
+                              setActionMessage('章デバッグ情報をコンソールに出力しました');
+                              setTimeout(() => setActionMessage(''), 3000);
+                            }}
+                            style={{
+                              marginTop: '0.5rem',
+                              padding: '0.25rem 0.5rem',
+                              background: '#28a745',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: 3,
+                              cursor: 'pointer',
+                              fontSize: '0.7rem',
+                              marginRight: '0.5rem'
+                            }}
+                          >
+                            詳細をコンソールに出力
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm('本当に次の章に強制的に進みますか？これは緊急時のみ使用してください。')) {
+                                gameState.currentChapter += 1;
+                                gameState.currentWeek = 1;
+                                gameState.initializeChapter(gameState.currentChapter);
+                                gameState.performAutoSave();
+                                setActionMessage(`第${gameState.currentChapter}章に強制進行しました`);
+                                setTimeout(() => setActionMessage(''), 3000);
+                                refresh();
+                              }
+                            }}
+                            style={{
+                              marginTop: '0.5rem',
+                              padding: '0.25rem 0.5rem',
+                              background: '#dc3545',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: 3,
+                              cursor: 'pointer',
+                              fontSize: '0.7rem',
+                              marginRight: '0.5rem'
+                            }}
+                          >
+                            🚨 強制次章進行
+                          </button>
+                          <button
+                            onClick={() => {
+                              const path = prompt('進路を設定してください (kosen/university):');
+                              if (path === 'kosen' || path === 'university') {
+                                gameState.playerPath = path;
+                                gameState.performAutoSave();
+                                setActionMessage(`進路を${path}に設定しました`);
+                                setTimeout(() => setActionMessage(''), 3000);
+                                refresh();
+                              } else if (path !== null) {
+                                setActionMessage('無効な進路です');
+                                setTimeout(() => setActionMessage(''), 3000);
+                              }
+                            }}
+                            style={{
+                              marginTop: '0.5rem',
+                              padding: '0.25rem 0.5rem',
+                              background: '#ffc107',
+                              color: '#000',
+                              border: 'none',
+                              borderRadius: 3,
+                              cursor: 'pointer',
+                              fontSize: '0.7rem'
+                            }}
+                          >
+                            🎓 進路強制設定
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
           {currentView === 'log' && (
-            <EventLog events={eventLogs} />
+            <div>
+              {/* 操作説明セクション（機能フラグで制御） */}
+              {gameState.isFeatureEnabled('tutorialLogs') && (
+                <div style={{ marginBottom: '2rem' }}>
+                  <h3 style={{ 
+                    color: '#495057', 
+                    borderBottom: '2px solid #007bff', 
+                    paddingBottom: '0.5rem',
+                    marginBottom: '1rem'
+                  }}>
+                    📚 操作説明・ガイド
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {getAllTutorialLogs().map(tutorial => (
+                      <details key={tutorial.id} style={{
+                        border: '1px solid #dee2e6',
+                        borderRadius: 6,
+                        padding: '1rem',
+                        background: '#f8f9fa'
+                      }}>
+                        <summary style={{
+                          fontWeight: 'bold',
+                          color: '#495057',
+                          cursor: 'pointer',
+                          marginBottom: '0.5rem'
+                        }}>
+                          {tutorial.title}
+                        </summary>
+                        <div style={{
+                          fontSize: '0.9rem',
+                          lineHeight: '1.6',
+                          color: '#6c757d',
+                          whiteSpace: 'pre-line',
+                          marginTop: '0.5rem'
+                        }}>
+                          {tutorial.content}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                  <div style={{
+                    margin: '1rem 0',
+                    height: '2px',
+                    background: 'linear-gradient(to right, #007bff, transparent)',
+                    borderRadius: 1
+                  }}></div>
+                </div>
+              )}
+              
+              {/* 機能フラグが無効の場合の表示 */}
+              {!gameState.isFeatureEnabled('tutorialLogs') && (
+                <div style={{
+                  marginBottom: '2rem',
+                  padding: '1rem',
+                  background: '#e9ecef',
+                  borderRadius: 6,
+                  textAlign: 'center',
+                  color: '#6c757d'
+                }}>
+                  💡 操作説明機能は準備中です（管理者モードで有効化可能）
+                </div>
+              )}
+
+              <EventLog events={eventLogs} />
+            </div>
           )}
 
           {currentView === 'workspace' && gameState.isAdmin && (

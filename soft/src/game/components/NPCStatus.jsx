@@ -4,7 +4,7 @@ import React from 'react';
  * NPCステータス表示コンポーネント
  * 設計資料に基づくNPC好感度システムを実装
  */
-export default function NPCStatus({ npcs, onInteract, playerSP, playerHP }) {
+export default function NPCStatus({ npcs, onInteract, playerSP, playerHP, gameState, onNPCEvent }) {
   const getAffectionLevel = (affection) => {
     if (affection >= 100) return { level: '最高', color: '#d69e2e', icon: '💖' };
     if (affection >= 64) return { level: '親密', color: '#38a169', icon: '💕' };
@@ -194,27 +194,52 @@ export default function NPCStatus({ npcs, onInteract, playerSP, playerHP }) {
                 </div>
               )}
 
-              {/* 交流ボタン */}
-              <button
-                onClick={() => onInteract && onInteract(npc.name)}
-                disabled={!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: 'none',
-                  borderRadius: 6,
-                  background: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? '#e2e8f0' : categoryInfo.color,
-                  color: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? '#a0aec0' : 'white',
-                  fontWeight: 'bold',
-                  cursor: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s',
-                  opacity: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? 0.6 : 1
-                }}
-              >
-                {!onInteract ? '交流機能なし' : 
-                 (playerHP && playerHP <= 0) ? 'HP不足' :
-                 (playerSP && playerSP < 5) ? 'SP不足' : '交流する (SP -5)'}
-              </button>
+              {/* 交流・イベントボタン */}
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  onClick={() => onInteract && onInteract(npc.name)}
+                  disabled={!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)}
+                  style={{
+                    flex: 1,
+                    padding: '0.75rem',
+                    border: 'none',
+                    borderRadius: 6,
+                    background: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? '#e2e8f0' : categoryInfo.color,
+                    color: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? '#a0aec0' : 'white',
+                    fontWeight: 'bold',
+                    cursor: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                    opacity: (!onInteract || (playerHP && playerHP <= 0) || (playerSP && playerSP < 5)) ? 0.6 : 1
+                  }}
+                >
+                  {!onInteract ? '交流機能なし' : 
+                   (playerHP && playerHP <= 0) ? 'HP不足' :
+                   (playerSP && playerSP < 5) ? 'SP不足' : '💬 交流する (SP -5)'}
+                </button>
+
+                {/* NPCイベントボタン（機能フラグで制御） */}
+                {gameState && gameState.isFeatureEnabled && gameState.isFeatureEnabled('npcEvents') && npc.affection >= 32 && (
+                  <button
+                    onClick={() => onNPCEvent && onNPCEvent(npc.name)}
+                    style={{
+                      padding: '0.75rem',
+                      background: npc.affection >= 100 ? '#f39c12' : 
+                                 npc.affection >= 64 ? '#28a745' : '#17a2b8',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      fontSize: '0.9rem',
+                      minWidth: '60px'
+                    }}
+                    title={`NPCイベント（好感度${npc.affection}）`}
+                  >
+                    {npc.affection >= 100 ? '✨' : 
+                     npc.affection >= 64 ? '🎁' : '💫'}
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

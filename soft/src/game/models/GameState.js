@@ -1,7 +1,5 @@
-/**
- * ゲーム状態管理クラス
- * 設計資料に基づくステータス・好感度システムの実装
- */
+/**ゲーム状態管理クラス
+ * 設計資料に基づくステータス・好感度システムの実装*/
 
 class GameState {
   constructor() {
@@ -20,11 +18,10 @@ class GameState {
       maxSP: 100         // 最大SP
     };
 
-    // NPCデータ（設計資料に基づく）
-    this.npcs = {
+        this.npcs = {
       '赤峰教授': {
         name: '赤峰教授',
-        affection: 8,      // 好感度 (0-128)
+        affection: 8,      
         maxAffection: 128,
         category: 'professor',
         skills: ['教授の機嫌を読む'],
@@ -86,13 +83,55 @@ class GameState {
     this.isAdmin = false;
     this.adminPasswordHash = 'mnsd2025x'; 
     
+    // 機能フラグシステム（大規模アップデート用）
+    this.featureFlags = {
+      // 基本機能（常に有効）
+      chapter1: true,// １章
+      chapter2: true,// ２章
+      basicBattle: true,// 戦闘NPC
+      basicShop: true,// ショップ
+      basicNPCInteraction: true, //NPC 
+      chapter3: true,           // 第3章：進路選択
+      chapter4: true,           // 第4章：高専組インターン
+      chapter5: true,           // 第5章：高専組研究室配属
+      skillSystem: true,        // スキル戦闘使用
+      gachaSystem: true,        // ガチャショップ
+      npcEvents: true,          // NPC好感度イベント
+      extendedItems: true,      // 追加アイテム
+      extendedEnemies: true,    // 追加敵種類
+      playerChat: true,         // プレイヤー間チャット
+      tutorialLogs: true,       // 操作説明ログ
+      advancedBattle: true,     // 高度な戦闘システム
+      randomEvents: true,       // ランダムイベント
+      achievementSystem: true,  // 実績システム
+      superRareItems: true,     // 超激レアアイテム（ガチャ機能）
+      
+      // チート・デバッグ系（無効のまま）
+      debugMode: false,         // デバッグモード
+      devTools: false,          // 開発者ツール
+      infiniteMoney: false,     // 無限お金
+      maxStats: false          // 最大ステータス
+    };
+    
+    // バージョン管理
+    this.gameVersion = '2.0.1';
+    this.dataVersion = '2.0.1';
+    
+    // 新機能のデータ構造（まだコメントアウト状態）
+    this.skills = [];              // プレイヤースキル詳細
+    this.inventory = [];           // アイテムインベントリ
+    this.gachaItems = [];          // ガチャ専用アイテム
+    this.chatMessages = [];        // チャットメッセージ
+    this.npcEventHistory = [];     // NPCイベント履歴
+    this.playerPath = null;        // 進路選択結果
+    
     // ワークスペース監視システム
     this.workspaceMonitoring = {
       sessions: new Map(), // sessionId -> { playerId, startTime, lastActivity, currentView, suspiciousActivity }
       playerCount: 0,
       adminSessions: new Set(),
       securityLogs: [],
-      maxSessions: 100, // 最大同時接続数
+      //maxSessions: 100, // 最大同時接続数
       sessionTimeout: 30 * 60 * 1000, // 30分でタイムアウト
       suspiciousThreshold: 5 // 不正行為の閾値
     };
@@ -200,6 +239,7 @@ class GameState {
         const saveData = JSON.parse(autoSaveData);
         // 保存から1時間以内なら自動復元
         if (Date.now() - saveData.savedAt < 3600000) {
+          this.loadData(saveData); // 実際にデータをロード
           console.log('オートセーブから進行状況を復元しました');
           return true;
         }
@@ -210,10 +250,103 @@ class GameState {
     return false;
   }
 
+  // 機能フラグ管理メソッド
+  isFeatureEnabled(featureName) {
+    return this.featureFlags[featureName] === true;
+  }
+
+  // 管理者による機能フラグ切り替え
+  toggleFeatureFlag(featureName, enabled = null) {
+    if (!this.isAdmin) {
+      console.warn('機能フラグの変更には管理者権限が必要です');
+      return false;
+    }
+    
+    if (featureName in this.featureFlags) {
+      this.featureFlags[featureName] = enabled !== null ? enabled : !this.featureFlags[featureName];
+      console.log(`機能フラグ ${featureName} を ${this.featureFlags[featureName] ? '有効' : '無効'} にしました`);
+      return true;
+    }
+    
+    console.warn(`未知の機能フラグ: ${featureName}`);
+    return false;
+  }
+
+  // 全機能フラグの状態を取得
+  getFeatureFlags() {
+    return { ...this.featureFlags };
+  }
+
+  // バージョン互換性チェック
+  checkVersionCompatibility(saveData) {
+    if (!saveData.gameVersion || !saveData.dataVersion) {
+      return { compatible: true, needsUpgrade: true };
+    }
+    
+    const [currentMajor, currentMinor] = this.gameVersion.split('.').map(Number);
+    const [saveMajor, saveMinor] = saveData.gameVersion.split('.').map(Number);
+    
+    if (saveMajor > currentMajor || (saveMajor === currentMajor && saveMinor > currentMinor)) {
+      return { compatible: false, needsUpgrade: false, reason: 'セーブデータのバージョンが新しすぎます' };
+    }
+    
+    return { compatible: true, needsUpgrade: saveMajor < currentMajor };
+  }
+
+  // 安全な機能有効化（段階的ロールアウト用）
+  enableFeatureSafely(featureName, force = false) {
+    if (!this.isAdmin && !force) {
+      console.warn('機能の有効化には管理者権限が必要です');
+      return false;
+    }
+
+    // 依存関係チェック
+    const dependencies = {
+      chapter3: ['chapter1', 'chapter2'],
+      chapter4: ['chapter3'],
+      chapter5: ['chapter4'],
+      skillSystem: ['basicBattle'],
+      gachaSystem: ['basicShop'],
+      npcEvents: ['basicNPCInteraction'],
+      superRareItems: ['gachaSystem', 'extendedItems']
+    };
+
+    if (dependencies[featureName]) {
+      for (const dep of dependencies[featureName]) {
+        if (!this.featureFlags[dep]) {
+          console.warn(`機能 ${featureName} には ${dep} が必要です`);
+          return false;
+        }
+      }
+    }
+
+    this.featureFlags[featureName] = true;
+    console.log(`機能 ${featureName} を安全に有効化しました`);
+    return true;
+  }
+
+  // 全プレイヤー向け機能ロールアウト計画（完了済み）
+  planFeatureRollout() {
+    return {
+      cheat_phase: {
+        name: 'チート機能（管理者のみ）',
+        features: ['debugMode', 'devTools', 'infiniteMoney', 'maxStats'],
+        estimatedTime: '手動有効化',
+        riskLevel: 'critical',
+        status: 'manual_only'
+      }
+    };
+  }
+
   // 定期オートセーブを開始
   startAutoSave() {
     if (this.autoSaveEnabled && typeof window !== 'undefined') {
-      setInterval(() => {
+      // 既存のオートセーブタイマーがあればクリア
+      if (this.autoSaveTimer) {
+        clearInterval(this.autoSaveTimer);
+      }
+      
+      this.autoSaveTimer = setInterval(() => {
         this.performAutoSave();
       }, this.autoSaveInterval);
     }
@@ -468,7 +601,11 @@ class GameState {
       purchasedItems: this.purchasedItems,
       chapterProgress: this.chapterProgress,
       chapterEvents: this.chapterEvents,
-      chapterGoals: this.chapterGoals
+      chapterGoals: this.chapterGoals,
+      gameVersion: this.gameVersion,
+      dataVersion: this.dataVersion,
+      featureFlags: this.featureFlags,
+      playerPath: this.playerPath || null
     };
   }
 
@@ -484,16 +621,86 @@ class GameState {
     this.choiceHistory = saveData.choiceHistory || [];
     this.defeatedEnemies = saveData.defeatedEnemies || [];
     this.isAdmin = saveData.isAdmin || false;
-    this.purchasedItems = saveData.purchasedItems || [];
+    this.purchasedItems = (saveData.purchasedItems || []).map(item => ({
+      itemId: item.itemId || `item_${item.timestamp || Date.now()}`,
+      itemName: item.itemName || item.name || '不明なアイテム',
+      price: item.price || item.cost || 0,
+      purchaseDate: item.purchaseDate || item.timestamp || Date.now(),
+      type: item.type || 'item',
+      rarity: item.rarity || null
+    }));
     this.chapterProgress = saveData.chapterProgress || 0;
     this.chapterEvents = saveData.chapterEvents || null;
     this.chapterGoals = saveData.chapterGoals || {};
+    
+    // 新機能データの復元（バージョン互換性考慮）
+    if (saveData.gameVersion) {
+      this.gameVersion = saveData.gameVersion;
+    }
+    if (saveData.dataVersion) {
+      this.dataVersion = saveData.dataVersion;
+    }
+    if (saveData.featureFlags) {
+      // 新しいデフォルト設定を保持し、セーブデータで明示的に無効化されたもののみ上書き
+      // ただし、チート系機能は常にセーブデータの設定を尊重
+      const newFlags = { ...this.featureFlags };
+      
+      // チート系機能のみセーブデータの設定を適用
+      const cheatFeatures = ['debugMode', 'devTools', 'infiniteMoney', 'maxStats'];
+      cheatFeatures.forEach(feature => {
+        if (saveData.featureFlags.hasOwnProperty(feature)) {
+          newFlags[feature] = saveData.featureFlags[feature];
+        }
+      });
+      
+      // 通常機能は新しいデフォルト設定を維持
+      this.featureFlags = newFlags;
+    }
+    if (saveData.playerPath) {
+      this.playerPath = saveData.playerPath;
+    }
+    
+    // バージョン互換性チェック
+    const compatibility = this.checkVersionCompatibility(saveData);
+    if (!compatibility.compatible) {
+      console.warn('セーブデータのバージョンが互換性がありません:', compatibility.reason);
+    } else if (compatibility.needsUpgrade) {
+      console.log('セーブデータをアップグレードしました');
+      // アップグレード時に通常機能フラグを最新のデフォルトに更新
+      this.upgradeFeatureFlags();
+    }
     
     // chapterEventsまたはchapterGoalsが存在しない場合、現在の章で再初期化
     if (!this.chapterEvents || !this.chapterGoals || Object.keys(this.chapterGoals).length === 0) {
       console.log('章データが不完全なため再初期化します');
       this.initializeChapter(this.currentChapter);
     }
+  }
+
+  // 機能フラグのアップグレード処理
+  upgradeFeatureFlags() {
+    console.log('機能フラグを最新のデフォルト設定に更新中...');
+    
+    // 通常機能を有効化（チート系は除く）
+    const normalFeatures = [
+      'chapter1', 'chapter2', 'chapter3', 'chapter4', 'chapter5',
+      'basicBattle', 'basicShop', 'basicNPCInteraction',
+      'skillSystem', 'gachaSystem', 'npcEvents', 
+      'extendedItems', 'extendedEnemies', 'playerChat', 
+      'tutorialLogs', 'advancedBattle', 'randomEvents', 
+      'achievementSystem', 'superRareItems'
+    ];
+    
+    normalFeatures.forEach(feature => {
+      if (this.featureFlags.hasOwnProperty(feature)) {
+        this.featureFlags[feature] = true;
+      }
+    });
+    
+    console.log('機能フラグのアップグレード完了');
+    
+    // アップグレード後すぐにセーブ
+    this.performAutoSave();
   }
 
   // 章システム
@@ -507,7 +714,7 @@ class GameState {
         this.chapterGoals = {
           requiredCredits: 3,
           maxStress: 50,
-          targetNPCs: ['田中教授', '佐藤さん']
+          targetNPCs: ['赤峰教授', '真田翔']
         };
         this.chapterEvents = [
           { id: 'orientation', name: 'オリエンテーション', completed: false, type: 'intro' },
@@ -557,6 +764,144 @@ class GameState {
           { id: 'chapter2End', name: '第2章完了', completed: false, type: 'evaluation' }
         ];
         break;
+      case 3:
+        // 第3章：進路選択（機能フラグで制御）
+        if (this.isFeatureEnabled('chapter3')) {
+          this.chapterGoals = {
+            requiredCredits: 8,
+            maxStress: 80,
+            specialRequirement: '進路選択決定'
+          };
+          this.chapterEvents = [
+            { id: 'thirdYearStart', name: '3年生開始', completed: false, type: 'intro' },
+            { id: 'careerGuidance', name: '進路指導', completed: false, type: 'choice',
+              choices: [
+                { id: 'university', name: '大学進学', effect: { theory: 10, money: -2000 }, path: 'university' },
+                { id: 'continue_kosen', name: '高専継続', effect: { submission: 8, social: 5 }, path: 'kosen' }
+              ]
+            },
+            { id: 'pathPreparation', name: '進路準備', completed: false, type: 'free' },
+            { id: 'finalDecision', name: '最終進路決定', completed: false, type: 'evaluation' }
+          ];
+        } else {
+          this.chapterGoals = {};
+          this.chapterEvents = [];
+        }
+        break;
+      case 4:
+        // 第4章：高専組インターン（機能フラグで制御）
+        if (this.isFeatureEnabled('chapter4') && this.playerPath === 'kosen') {
+          this.chapterGoals = {
+            requiredCredits: 12,
+            specialRequirement: 'インターン完了',
+            internshipType: null
+          };
+          this.chapterEvents = [
+            { id: 'internshipSearch', name: 'インターン先探し', completed: false, type: 'choice',
+              choices: [
+                { id: 'tech_company', name: 'IT企業', effect: { theory: 15, social: 10 } },
+                { id: 'manufacturing', name: '製造業', effect: { submission: 20, money: 1000 } },
+                { id: 'startup', name: 'スタートアップ', effect: { social: 15, stress: 10 } }
+              ]
+            },
+            { id: 'internshipWork', name: 'インターン実習', completed: false, type: 'battle',
+              enemy: { name: '実務の壁', hp: 200, maxHP: 200, expReward: 500, submissionBonus: 15, description: '実際の業務で直面する困難' } },
+            { id: 'socialImplementation', name: '社会実装プロジェクト', completed: false, type: 'boss',
+              requirements: { submission: 150, theory: 140, social: 100 },
+              enemy: { name: '社会課題', hp: 250, maxHP: 250, expReward: 800, submissionBonus: 20, description: '社会に役立つシステムの実装' } }
+          ];
+        } else if (this.isFeatureEnabled('chapter4') && this.playerPath === 'university') {
+          // 大学進学組の第4章：大学編入試験
+          this.chapterGoals = {
+            requiredCredits: 14,
+            specialRequirement: '編入試験合格',
+            universityChoice: null
+          };
+          this.chapterEvents = [
+            { id: 'entranceExamPrep', name: '編入試験対策', completed: false, type: 'battle',
+              enemy: { name: '編入試験模試', hp: 200, maxHP: 200, expReward: 600, submissionBonus: 15, description: '理論力と応用力が試される' } },
+            { id: 'universitySelection', name: '大学選択', completed: false, type: 'choice',
+              choices: [
+                { id: 'top_university', name: '難関国立大学', requirements: { theory: 200, submission: 150 }, effect: { theory: 30 } },
+                { id: 'engineering_university', name: '工科系大学', requirements: { theory: 150, submission: 180 }, effect: { submission: 25 } },
+                { id: 'private_university', name: '私立大学', requirements: { theory: 120, social: 100 }, effect: { social: 20 } }
+              ]
+            },
+            { id: 'entranceExam', name: '編入試験', completed: false, type: 'battle',
+              enemy: { name: '大学編入試験', hp: 250, maxHP: 250, expReward: 800, submissionBonus: 20, description: '人生の分岐点となる重要な試験' } },
+            { id: 'admissionResult', name: '合格発表', completed: false, type: 'evaluation' }
+          ];
+        } else {
+          this.chapterGoals = {};
+          this.chapterEvents = [];
+        }
+        break;
+      case 5:
+        // 第5章：高専組研究室配属（機能フラグで制御）
+        if (this.isFeatureEnabled('chapter5') && this.playerPath === 'kosen') {
+          this.chapterGoals = {
+            requiredCredits: 16,
+            specialRequirement: '最終進路決定',
+            researchLab: null,
+            finalPath: null
+          };
+          this.chapterEvents = [
+            { id: 'labAssignment', name: '研究室配属', completed: false, type: 'choice',
+              choices: [
+                { id: 'ai_lab', name: 'AI研究室', requirements: { theory: 180 }, effect: { theory: 25 } },
+                { id: 'robotics_lab', name: 'ロボティクス研究室', requirements: { submission: 180 }, effect: { submission: 25 } },
+                { id: 'social_lab', name: '社会システム研究室', requirements: { social: 150 }, effect: { social: 20 } }
+              ]
+            },
+            { id: 'researchProject', name: '研究プロジェクト', completed: false, type: 'battle',
+              enemy: { name: '研究課題', hp: 300, maxHP: 300, expReward: 1000, submissionBonus: 25, description: '独創的な研究が求められる' } },
+            { id: 'finalPathChoice', name: '最終進路選択', completed: false, type: 'choice',
+              choices: [
+                { id: 'university_transfer', name: '大学編入', requirements: { theory: 200, submission: 180 } },
+                { id: 'employment', name: '就職', requirements: { submission: 200, social: 150 } },
+                { id: 'advanced_course', name: '専攻科進学', requirements: { theory: 180, submission: 180, social: 120 } }
+              ]
+            }
+          ];
+        } else if (this.isFeatureEnabled('chapter5') && this.playerPath === 'university') {
+          // 大学進学組の第5章：大学生活
+          this.chapterGoals = {
+            requiredCredits: 18,
+            specialRequirement: '専門分野決定',
+            researchField: null,
+            graduationPath: null
+          };
+          this.chapterEvents = [
+            { id: 'universityOrientation', name: '大学入学ガイダンス', completed: false, type: 'intro' },
+            { id: 'majorSelection', name: '専攻選択', completed: false, type: 'choice',
+              choices: [
+                { id: 'computer_science', name: '情報工学', requirements: { theory: 180 }, effect: { theory: 30 } },
+                { id: 'mechanical_eng', name: '機械工学', requirements: { submission: 180 }, effect: { submission: 30 } },
+                { id: 'electrical_eng', name: '電気電子工学', requirements: { theory: 150, submission: 150 }, effect: { theory: 20, submission: 20 } }
+              ]
+            },
+            { id: 'researchLab', name: '研究室配属', completed: false, type: 'choice',
+              choices: [
+                { id: 'ai_research', name: 'AI研究室', requirements: { theory: 200 }, effect: { theory: 35 } },
+                { id: 'robotics_research', name: 'ロボティクス研究室', requirements: { submission: 200 }, effect: { submission: 35 } },
+                { id: 'system_research', name: 'システム工学研究室', requirements: { social: 150 }, effect: { social: 25 } }
+              ]
+            },
+            { id: 'undergraduateThesis', name: '卒業研究', completed: false, type: 'battle',
+              enemy: { name: '卒業論文', hp: 350, maxHP: 350, expReward: 1200, submissionBonus: 30, description: '4年間の集大成となる研究課題' } },
+            { id: 'graduationDecision', name: '卒業後進路決定', completed: false, type: 'choice',
+              choices: [
+                { id: 'graduate_school', name: '大学院進学', requirements: { theory: 220, submission: 200 } },
+                { id: 'corporate_job', name: '一般企業就職', requirements: { submission: 200, social: 180 } },
+                { id: 'research_institute', name: '研究機関就職', requirements: { theory: 250, submission: 180 } }
+              ]
+            }
+          ];
+        } else {
+          this.chapterGoals = {};
+          this.chapterEvents = [];
+        }
+        break;
       default:
         this.chapterGoals = {};
         this.chapterEvents = [];
@@ -583,20 +928,20 @@ class GameState {
     const event = this.chapterEvents.find(e => e.id === eventId);
     if (!event || !event.requirements) return { canAccess: true, message: '' };
     
-    const req = event.requirements;
+    const requirements = event.requirements;
     const missing = [];
     
-    if (req.submission && this.playerStats.submission < req.submission) {
-      missing.push(`提出力 ${req.submission}以上 (現在: ${this.playerStats.submission})`);
+    if (requirements.submission && this.playerStats.submission < requirements.submission) {
+      missing.push(`提出力 ${requirements.submission}以上 (現在: ${this.playerStats.submission})`);
     }
-    if (req.theory && this.playerStats.theory < req.theory) {
-      missing.push(`理論力 ${req.theory}以上 (現在: ${this.playerStats.theory})`);
+    if (requirements.theory && this.playerStats.theory < requirements.theory) {
+      missing.push(`理論力 ${requirements.theory}以上 (現在: ${this.playerStats.theory})`);
     }
-    if (req.social && this.playerStats.social < req.social) {
-      missing.push(`社交力 ${req.social}以上 (現在: ${this.playerStats.social})`);
+    if (requirements.social && this.playerStats.social < requirements.social) {
+      missing.push(`社交力 ${requirements.social}以上 (現在: ${this.playerStats.social})`);
     }
-    if (req.maxStress && this.playerStats.stress > req.maxStress) {
-      missing.push(`ストレス ${req.maxStress}以下 (現在: ${this.playerStats.stress})`);
+    if (requirements.maxStress && this.playerStats.stress > requirements.maxStress) {
+      missing.push(`ストレス ${requirements.maxStress}以下 (現在: ${this.playerStats.stress})`);
     }
     
     if (missing.length > 0) {
@@ -990,10 +1335,43 @@ class GameState {
 
   // 購入履歴取得
   getPurchaseHistory() {
-    return this.purchasedItems.sort((a, b) => b.purchaseDate - a.purchaseDate);
+    return this.purchasedItems
+      .map(item => ({
+        itemId: item.itemId || `item_${item.timestamp || Date.now()}`,
+        itemName: item.itemName || item.name || '不明なアイテム',
+        price: item.price || item.cost || 0,
+        purchaseDate: item.purchaseDate || item.timestamp || Date.now(),
+        type: item.type || 'item',
+        rarity: item.rarity || null
+      }))
+      .sort((a, b) => b.purchaseDate - a.purchaseDate);
   }
 
   // === 章進行システム拡張 ===
+
+  // デバッグ用：章の状態確認
+  getChapterDebugInfo() {
+    return {
+      currentChapter: this.currentChapter,
+      playerPath: this.playerPath,
+      chapterEvents: this.chapterEvents,
+      chapterGoals: this.chapterGoals,
+      featureFlags: {
+        chapter3: this.isFeatureEnabled('chapter3'),
+        chapter4: this.isFeatureEnabled('chapter4'),
+        chapter5: this.isFeatureEnabled('chapter5')
+      },
+      pathAvailability: {
+        chapter3: this.isFeatureEnabled('chapter3'),
+        chapter4_kosen: this.isFeatureEnabled('chapter4') && this.playerPath === 'kosen',
+        chapter4_university: this.isFeatureEnabled('chapter4') && this.playerPath === 'university',
+        chapter5_kosen: this.isFeatureEnabled('chapter5') && this.playerPath === 'kosen',
+        chapter5_university: this.isFeatureEnabled('chapter5') && this.playerPath === 'university'
+      },
+      completedEvents: this.chapterEvents ? this.chapterEvents.filter(e => e.completed).length : 0,
+      totalEvents: this.chapterEvents ? this.chapterEvents.length : 0
+    };
+  }
 
   // 章完了チェック
   canAdvanceToNextChapter() {
@@ -1047,12 +1425,28 @@ class GameState {
 
     // 次章が存在するかチェック
     const nextChapter = this.currentChapter + 1;
-    const availableChapters = [1, 2]; // 実装済みの章番号
-    
+    const availableChapters = [1, 2, 3, 4, 5]; // 基本的に利用可能な章
+      // 第4章は進路選択が必要
+      if (this.playerPath === 'kosen' || this.playerPath === 'university') {
+        availableChapters.push(4);
+      }
+      // 第5章も進路選択が必要
+      if (this.playerPath === 'kosen' || this.playerPath === 'university') {
+        availableChapters.push(5);
+      }
+     
     if (!availableChapters.includes(nextChapter)) {
+      const pathRequirement = nextChapter >= 4 ? `\n\n進路分岐の状態:\n現在の進路: ${this.playerPath || '未選択'}\n第${nextChapter}章には進路選択（高専継続 or 大学進学）が必要です。` : '';
+      
+      const featureStatus = {
+        3: this.isFeatureEnabled('chapter3') ? '有効' : '無効',
+        4: this.isFeatureEnabled('chapter4') ? '有効' : '無効', 
+        5: this.isFeatureEnabled('chapter5') ? '有効' : '無効'
+      };
+      
       return { 
         success: false, 
-        message: `第${nextChapter}章はまだ実装されていません。\n現在は第${Math.max(...availableChapters)}章までプレイ可能です。\n\nゲームをお楽しみいただき、ありがとうございました！` 
+        message: `第${nextChapter}章は未実装です。` 
       };
     }
 
@@ -1060,7 +1454,9 @@ class GameState {
     const chapterBonus = {
       1: { exp: 500, money: 2000, maxHP: 20, maxSP: 30 },
       2: { exp: 800, money: 3500, maxHP: 30, maxSP: 40 },
-      3: { exp: 900, money: 4000, maxHP: 60, maxSP: 48 }
+      3: { exp: 900, money: 4000, maxHP: 60, maxSP: 48 },
+      4: { exp: 1000, money: 4500, maxHP: 80, maxSP: 64 },
+      5: { exp: 1200, money: 5000, maxHP: 100, maxSP: 76 }
     };
 
     const bonus = chapterBonus[this.currentChapter];
@@ -1101,6 +1497,12 @@ class GameState {
       this.changeStats(choice.effect);
     }
 
+    // 進路選択の場合、playerPathを設定
+    if (choice.path && eventId === 'careerGuidance') {
+      this.playerPath = choice.path;
+      console.log(`進路選択完了: ${choice.path}`);
+    }
+
     // 選択を記録
     event.selectedChoice = choiceId;
     this.completeChapterEvent(eventId);
@@ -1111,7 +1513,7 @@ class GameState {
     return { 
       success: true, 
       message: `${choice.name}を選択しました！`,
-  effect: choice.effect
+      effect: choice.effect
     };
   }
 
@@ -1456,6 +1858,9 @@ class GameState {
     // プレイヤーIDを生成（ブラウザフィンガープリント + ランダム要素）
     this.currentPlayerId = this.generatePlayerId();
     
+    // ブラウザ環境チェック
+    const isClient = typeof window !== 'undefined' && typeof navigator !== 'undefined';
+    
     // セッション情報を登録
     this.workspaceMonitoring.sessions.set(this.currentSessionId, {
       playerId: this.currentPlayerId,
@@ -1463,8 +1868,8 @@ class GameState {
       lastActivity: Date.now(),
       currentView: 'status',
       suspiciousActivity: 0,
-      userAgent: navigator.userAgent,
-      screenInfo: `${screen.width}x${screen.height}`,
+      userAgent: isClient ? navigator.userAgent : 'server',
+      screenInfo: isClient && typeof screen !== 'undefined' ? `${screen.width}x${screen.height}` : '0x0',
       ipFingerprint: this.getIPFingerprint()
     });
     
@@ -1491,13 +1896,16 @@ class GameState {
    * プレイヤーIDを生成（ブラウザフィンガープリンティング）
    */
   generatePlayerId() {
+    // ブラウザ環境チェック
+    const isClient = typeof window !== 'undefined' && typeof navigator !== 'undefined';
+    
     const fingerprint = [
-      navigator.userAgent,
-      navigator.language,
-      screen.width + 'x' + screen.height,
+      isClient ? navigator.userAgent : 'server',
+      isClient ? navigator.language : 'unknown',
+      isClient && typeof screen !== 'undefined' ? screen.width + 'x' + screen.height : '0x0',
       new Date().getTimezoneOffset(),
-      navigator.platform,
-      navigator.cookieEnabled ? '1' : '0'
+      isClient ? navigator.platform : 'server',
+      isClient ? (navigator.cookieEnabled ? '1' : '0') : '0'
     ].join('|');
     
     // 簡単なハッシュ生成
@@ -1545,11 +1953,12 @@ class GameState {
   updateCurrentView(viewName) {
     if (this.workspaceMonitoring.sessions.has(this.currentSessionId)) {
       const session = this.workspaceMonitoring.sessions.get(this.currentSessionId);
+      const oldView = session.currentView;
       session.currentView = viewName;
       session.lastActivity = Date.now();
       
       this.logSecurityEvent('view_change', { 
-        from: session.currentView, 
+        from: oldView, 
         to: viewName 
       });
     }
@@ -1593,6 +2002,7 @@ class GameState {
    * セッションクリーンアップを開始
    */
   startSessionCleanup() {
+    // 既存のタイマーがあればクリア
     if (this.sessionCleanupInterval) {
       clearInterval(this.sessionCleanupInterval);
     }
@@ -1790,6 +2200,258 @@ class GameState {
         return { error: 'Unknown action' };
     }
   }
+
+  // ===============================
+  // 新機能メソッド（機能フラグで制御）
+  // ===============================
+
+  
+  // スキルシステム（skillSystem フラグで制御）
+  useSkillInBattle(skillId) {
+    if (!this.isFeatureEnabled('skillSystem')) return { success: false, message: 'スキル機能は無効です' };
+    
+    // 基本スキルシステムの実装
+    const skills = {
+      'power_attack': {
+        name: '強力な一撃',
+        spCost: 10,
+        effect: (playerStats, enemy) => ({
+          damage: Math.floor(playerStats.submission * 1.5),
+          message: '強力な一撃で敵にダメージを与えた！'
+        })
+      },
+      'focus': {
+        name: '集中',
+        spCost: 8,
+        effect: (playerStats) => ({
+          statBoost: { theory: 5 },
+          message: '集中力が高まり理論力が向上した！'
+        })
+      },
+      'teamwork': {
+        name: 'チームワーク',
+        spCost: 12,
+        effect: (playerStats) => ({
+          statBoost: { social: 8, submission: 3 },
+          message: 'チームワークで能力が向上した！'
+        })
+      }
+    };
+
+    const skill = skills[skillId];
+    if (!skill) {
+      return { success: false, message: '不明なスキルです' };
+    }
+
+    if (this.playerStats.sp < skill.spCost) {
+      return { success: false, message: `SPが不足しています（必要: ${skill.spCost}）` };
+    }
+
+    // SP消費
+    this.playerStats.sp -= skill.spCost;
+
+    // スキル効果を適用
+    const result = skill.effect(this.playerStats, this.currentBattle?.enemy);
+    
+    if (result.statBoost) {
+      Object.entries(result.statBoost).forEach(([stat, boost]) => {
+        this.playerStats[stat] += boost;
+      });
+    }
+
+    return { 
+      success: true, 
+      message: result.message,
+      damage: result.damage || 0,
+      spUsed: skill.spCost
+    };
+  }
+
+  // ガチャシステム（gachaSystem フラグで制御）
+  performGacha(gachaType = 'normal') {
+    if (!this.isFeatureEnabled('gachaSystem')) return { success: false, message: 'ガチャ機能は無効です' };
+    
+    const gachaCosts = {
+      normal: 300,
+      premium: 1500,
+      special: 3000
+    };
+
+    const cost = gachaCosts[gachaType];
+    if (this.playerStats.money < cost) {
+      return { success: false, message: `所持金が不足しています（必要: ${cost}円）` };
+    }
+
+    // 所持金を消費
+    this.playerStats.money -= cost;
+
+    // 外部データファイルからガチャアイテムを取得
+    let items;
+    try {
+      // 動的インポートではなく、直接データを使用
+      const gachaItemTables = {
+        normal: [
+          { name: 'エナジードリンク', rarity: 'common', effect: { sp: 20 }, probability: 50 },
+          { name: '栄養食品', rarity: 'common', effect: { hp: 25 }, probability: 30 },
+          { name: '参考書', rarity: 'rare', effect: { theory: 3 }, probability: 15 },
+          { name: 'プレゼンキット', rarity: 'rare', effect: { social: 3 }, probability: 5 }
+        ],
+        premium: [
+          { name: '高級参考書', rarity: 'rare', effect: { theory: 8 }, probability: 40 },
+          { name: '万能ツール', rarity: 'rare', effect: { submission: 8 }, probability: 30 },
+          { name: 'カリスマセット', rarity: 'epic', effect: { social: 12 }, probability: 20 },
+          { name: '超集中薬', rarity: 'epic', effect: { theory: 15, sp: 50 }, probability: 10 }
+        ],
+        special: []
+      };
+      if (this.isFeatureEnabled('superRareItems')) {
+        gachaItemTables.special = [
+          { name: '特別参考書', rarity: 'epic', effect: { theory: 12 }, probability: 25 },
+          { name: '特別ツール', rarity: 'epic', effect: { submission: 12 }, probability: 20 },
+          { name: '特別お守り', rarity: 'epic', effect: { maxHP: 30, maxSP: 30 }, probability: 15 },
+          { name: '伝説の教科書', rarity: 'legendary', effect: { theory: 25, submission: 15 }, probability: 15 },
+          { name: '最強のお守り', rarity: 'legendary', effect: { maxHP: 50, maxSP: 50 }, probability: 12 },
+          { name: '天才の証明', rarity: 'legendary', effect: { theory: 50 }, probability: 8 },
+          { name: '友情の絆', rarity: 'legendary', effect: { social: 30, stress: -20 }, probability: 3 },
+          { name: '時空の腕時計', rarity: 'mythic', effect: { theory: 100, submission: 100, social: 100 }, probability: 2}
+        ];
+      }
+
+      items = gachaItemTables[gachaType];
+    } catch (error) {
+      console.error('ガチャアイテムデータの読み込みに失敗:', error);
+      return { success: false, message: 'ガチャアイテムデータの読み込みに失敗しました' };
+    }
+
+    if (!items || items.length === 0) {
+      return { success: false, message: '利用可能なガチャアイテムがありません' };
+    }
+
+    const random = Math.random() * 100;
+    let accumulated = 0;
+    let selectedItem = null;
+
+    for (const item of items) {
+      accumulated += item.probability;
+      if (random <= accumulated) {
+        selectedItem = item;
+        break;
+      }
+    }
+
+    if (!selectedItem) {
+      selectedItem = items[0]; // フォールバック
+    }
+
+    // アイテム効果を適用
+    Object.entries(selectedItem.effect).forEach(([stat, value]) => {
+      if (stat === 'stress') {
+        this.playerStats.stress = Math.max(0, this.playerStats.stress + value);
+      } else {
+        this.playerStats[stat] = (this.playerStats[stat] || 0) + value;
+      }
+    });
+
+    // 購入履歴に追加
+    this.purchasedItems.push({
+      itemId: `gacha_${Date.now()}`,
+      itemName: `${selectedItem.rarity.toUpperCase()}: ${selectedItem.name}`,
+      price: cost,
+      purchaseDate: Date.now(),
+      type: 'gacha',
+      rarity: selectedItem.rarity
+    });
+
+    return { 
+      success: true, 
+      item: selectedItem,
+      message: `${selectedItem.rarity.toUpperCase()}: ${selectedItem.name}を獲得しました！`,
+      cost: cost
+    };
+  }
+
+  // NPCイベント（npcEvents フラグで制御）
+  triggerNPCEvent(npcName) {
+    if (!this.isFeatureEnabled('npcEvents')) return { success: false, message: 'NPCイベント機能は無効です' };
+    
+    const npc = this.npcs[npcName];
+    if (!npc) {
+      return { success: false, message: '存在しないNPCです' };
+    }
+
+    // 好感度に基づくイベント
+    const affection = npc.affection;
+    let event = null;
+
+    if (affection >= 100) {
+      event = {
+        title: `${npcName}との特別な時間`,
+        content: `${npcName}との絆が深まり、特別なスキルを習得しました！`,
+        rewards: { skill: npc.skills[0] || '友情スキル', statBonus: { social: 10 } }
+      };
+    } else if (affection >= 64) {
+      event = {
+        title: `${npcName}との協力`,
+        content: `${npcName}があなたの勉強を手伝ってくれました`,
+        rewards: { statBonus: { theory: 5, submission: 3 } }
+      };
+    } else if (affection >= 32) {
+      event = {
+        title: `${npcName}との会話`,
+        content: `${npcName}と楽しい時間を過ごしました`,
+        rewards: { statBonus: { social: 3 }, stress: -5 }
+      };
+    } else {
+      return { success: false, message: '好感度が不足しています（32以上必要）' };
+    }
+
+    // 報酬を適用
+    if (event.rewards.statBonus) {
+      Object.entries(event.rewards.statBonus).forEach(([stat, bonus]) => {
+        this.playerStats[stat] += bonus;
+      });
+    }
+    if (event.rewards.stress) {
+      this.playerStats.stress = Math.max(0, this.playerStats.stress + event.rewards.stress);
+    }
+    if (event.rewards.skill) {
+      if (!this.playerSkills.includes(event.rewards.skill)) {
+        this.playerSkills.push(event.rewards.skill);
+      }
+    }
+
+    return { 
+      success: true, 
+      event: event,
+      message: `${event.title}: ${event.content}`
+    };
+  }
+
+  // プレイヤーチャット（playerChat フラグで制御）
+  sendChatMessage(message) {
+    if (!this.isFeatureEnabled('playerChat')) return { success: false, message: 'チャット機能は無効です' };
+    
+    // 実装は後で追加
+    return { success: false, message: 'チャット機能は開発中です' };
+  }
+
+  // ===============================
+  // 新機能メソッド（機能フラグで制御）
+  // ===============================
+
+  /*
+  // 操作説明ログは外部ファイル (tutorialLogs.js) で管理
+  // GameMainコンポーネントで直接importして使用
+  */
+
+  // 進路選択処理
+  setPlayerPath(path) {
+    if (!this.isFeatureEnabled('chapter3')) return { success: false, message: '進路選択機能は無効です' };
+    
+    this.playerPath = path;
+    return { success: true, message: `進路を${path}に設定しました` };
+  }
+  
 }
 
 export default GameState;
