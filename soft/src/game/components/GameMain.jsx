@@ -9,6 +9,7 @@ import GameUI from './GameUI';
 import NPCStatus from './NPCStatus';
 import EventLog from './EventLog';
 import BattleSystem from './BattleSystem';
+import PlayerChat from './PlayerChat';
 import { getAllTutorialLogs } from '../data/tutorialLogs';
 
 export default function GameMain() {
@@ -78,6 +79,73 @@ export default function GameMain() {
     };
   }, []);
 
+  // アクティビティハートビート（ユーザーがアクティブかどうかを定期的に記録）
+  useEffect(() => {
+    let isActive = true;
+    let lastMouseMove = Date.now();
+    let lastKeyPress = Date.now();
+    
+    // マウス移動の検知
+    const handleMouseMove = () => {
+      lastMouseMove = Date.now();
+      if (isActive) {
+        gameState.updateCurrentView(currentView);
+      }
+    };
+    
+    // キーボード入力の検知
+    const handleKeyPress = () => {
+      lastKeyPress = Date.now();
+      if (isActive) {
+        gameState.updateCurrentView(currentView);
+      }
+    };
+    
+    // 定期的なハートビート（30秒間隔）
+    const heartbeatInterval = setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastActivity = Math.min(now - lastMouseMove, now - lastKeyPress);
+      
+      // 2分以内にマウスまたはキーボードの操作があった場合はアクティブとみなす
+      if (timeSinceLastActivity < 120000) {
+        gameState.updateCurrentView(currentView);
+        isActive = true;
+      } else {
+        isActive = false;
+      }
+    }, 30000); // 30秒間隔
+    
+    // イベントリスナーを追加
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('keydown', handleKeyPress);
+    document.addEventListener('click', handleMouseMove);
+    
+    return () => {
+      clearInterval(heartbeatInterval);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('keydown', handleKeyPress);
+      document.removeEventListener('click', handleMouseMove);
+    };
+  }, [currentView]);
+
+  // ワークスペース監視画面の自動更新
+  useEffect(() => {
+    let workspaceUpdateInterval;
+    
+    if (currentView === 'workspace' && gameState.isAdmin && autoRefreshWorkspace) {
+      // 5秒間隔でワークスペース統計を更新
+      workspaceUpdateInterval = setInterval(() => {
+        setWorkspaceStats(gameState.getWorkspaceStats());
+      }, 5000);
+    }
+    
+    return () => {
+      if (workspaceUpdateInterval) {
+        clearInterval(workspaceUpdateInterval);
+      }
+    };
+  }, [currentView, autoRefreshWorkspace]);
+
   // 強制的にコンポーネントを再描画するための関数
   const refresh = () => forceUpdate({});
 
@@ -102,6 +170,9 @@ export default function GameMain() {
         enemy={gameState.currentBattle.enemy}
         playerStats={gameState.playerStats}
         onBattleEnd={(result, rewards) => {
+          // ユーザーアクティビティを記録
+          gameState.updateCurrentView(currentView);
+          
           // 敵の情報を先に保存（endBattle前に）
           const enemyName = gameState.currentBattle?.enemy?.name || '未知の敵';
           
@@ -180,6 +251,9 @@ export default function GameMain() {
 
   // 行動処理
   const performAction = (actionType) => {
+    // ユーザーアクティビティを記録
+    gameState.updateCurrentView(currentView);
+    
     const result = gameState.performAction(actionType);
     setActionMessage(result);
     
@@ -239,6 +313,9 @@ export default function GameMain() {
 
   // NPC交流処理
   const interactWithNPC = (npcName) => {
+    // ユーザーアクティビティを記録
+    gameState.updateCurrentView(currentView);
+    
     // HP/SP不足チェック
     if (gameState.playerStats.hp <= 0) {
       setActionMessage('HP不足のため交流できません。休息を取ってください。');
@@ -271,6 +348,9 @@ export default function GameMain() {
 
   // NPCイベント処理
   const handleNPCEvent = (npcName) => {
+    // ユーザーアクティビティを記録
+    gameState.updateCurrentView(currentView);
+    
     const result = gameState.triggerNPCEvent(npcName);
     
     if (result.success) {
@@ -370,6 +450,9 @@ export default function GameMain() {
   const handleChoice = (choiceId) => {
     if (!currentChoiceEvent) return;
     
+    // ユーザーアクティビティを記録
+    gameState.updateCurrentView(currentView);
+    
     const result = gameState.processChoiceEvent(currentChoiceEvent.id, choiceId);
     
     if (result.success) {
@@ -398,6 +481,9 @@ export default function GameMain() {
   // 自由行動選択イベント処理
   const handleFreeActionChoice = (choiceId) => {
     if (!currentFreeActionEvent) return;
+    
+    // ユーザーアクティビティを記録
+    gameState.updateCurrentView(currentView);
     
     const result = gameState.processFreeActionChoice(currentFreeActionEvent.id, choiceId);
     
@@ -603,6 +689,7 @@ export default function GameMain() {
               { key: 'shop', label: 'ショップ' },
               { key: 'rematch', label: '再戦' },
               { key: 'save', label: 'セーブ&ロード' },
+              { key: 'chat', label: 'チャット' },
               { key: 'log', label: 'ログ' },
               ...(gameState.isAdmin ? [{ key: 'workspace', label: '🔍 監視' }] : [])
             ].map(tab => (
@@ -822,6 +909,9 @@ export default function GameMain() {
                     </div>
                     <button
                       onClick={() => {
+                        // ユーザーアクティビティを記録
+                        gameState.updateCurrentView(currentView);
+                        
                         const result = gameState.purchaseItem(item.id);
                         if (result.success) {
                           setActionMessage(result.message);
@@ -1067,6 +1157,9 @@ export default function GameMain() {
                     <button
                       key={slot}
                       onClick={() => {
+                        // ユーザーアクティビティを記録
+                        gameState.updateCurrentView(currentView);
+                        
                         if (gameState.saveToLocalStorage(slot)) {
                           alert(`スロット ${slot} にセーブしました！`);
                           refresh();
@@ -1148,6 +1241,9 @@ export default function GameMain() {
                             <button
                               onClick={() => {
                                 if (confirm(`スロット ${save.slotName} からロードしますか？\n現在の進行状況は失われます。`)) {
+                                  // ユーザーアクティビティを記録
+                                  gameState.updateCurrentView(currentView);
+                                  
                                   if (gameState.loadFromLocalStorage(save.slotName)) {
                                     setGameState(new gameState.constructor(gameState));
                                     alert('ロードしました！');
@@ -1173,6 +1269,9 @@ export default function GameMain() {
                             <button
                               onClick={() => {
                                 if (confirm(`スロット ${save.slotName} のセーブデータを削除しますか？`)) {
+                                  // ユーザーアクティビティを記録
+                                  gameState.updateCurrentView(currentView);
+                                  
                                   if (GameState.deleteSaveData(save.slotName)) {
                                     alert('削除しました');
                                     refresh();
@@ -1209,6 +1308,9 @@ export default function GameMain() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
                   <button
                     onClick={() => {
+                      // ユーザーアクティビティを記録
+                      gameState.updateCurrentView(currentView);
+                      
                       if (gameState.saveToLocalStorage('quicksave')) {
                         setActionMessage('クイックセーブしました！');
                         setTimeout(() => setActionMessage(''), 2000);
@@ -1229,6 +1331,9 @@ export default function GameMain() {
                   <button
                     onClick={() => {
                       if (confirm('クイックセーブからロードしますか？')) {
+                        // ユーザーアクティビティを記録
+                        gameState.updateCurrentView(currentView);
+                        
                         if (gameState.loadFromLocalStorage('quicksave')) {
                           setGameState(new gameState.constructor(gameState));
                           setActionMessage('クイックロードしました！');
@@ -1284,6 +1389,81 @@ export default function GameMain() {
                   開発モード終了
                 </button>
               </div>
+              
+              {/* チャット管理セクション */}
+              {gameState.isFeatureEnabled('playerChat') && (
+                <div style={{ marginBottom: '2rem' }}>
+                  <h4 style={{ marginBottom: '0.75rem', color: '#4a5568', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                    💬 チャット管理
+                  </h4>
+                  <div style={{ display: 'grid', gap: '0.75rem' }}>
+                    <button
+                      onClick={() => {
+                        const result = gameState.getChatStats();
+                        if (result.success) {
+                          const stats = result.stats;
+                          alert(`チャット統計:\n総メッセージ: ${stats.totalMessages}\n1時間以内: ${stats.messagesLastHour}\n1日以内: ${stats.messagesLastDay}\nブロック済みユーザー: ${stats.blockedUsers}\n報告済みメッセージ: ${stats.reportedMessages}\nアクティブユーザー: ${stats.activeUsers}`);
+                        }
+                      }}
+                      style={{
+                        padding: '0.75rem',
+                        background: '#17a2b8',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      📊 チャット統計表示
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        const playerId = prompt('ブロックするプレイヤーIDを入力してください:');
+                        if (playerId) {
+                          const result = gameState.blockPlayerFromChat(playerId);
+                          setActionMessage(result.success ? result.message : `❌ ${result.message}`);
+                          setTimeout(() => setActionMessage(''), 3000);
+                        }
+                      }}
+                      style={{
+                        padding: '0.75rem',
+                        background: '#dc3545',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      🚫 ユーザーブロック
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        const playerId = prompt('ブロック解除するプレイヤーIDを入力してください:');
+                        if (playerId) {
+                          const result = gameState.unblockPlayerFromChat(playerId);
+                          setActionMessage(result.success ? result.message : `❌ ${result.message}`);
+                          setTimeout(() => setActionMessage(''), 3000);
+                        }
+                      }}
+                      style={{
+                        padding: '0.75rem',
+                        background: '#28a745',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      ✅ ブロック解除
+                    </button>
+                  </div>
+                </div>
+              )}
               
               {/* チート機能セクション */}
               <div style={{ marginBottom: '2rem' }}>
@@ -1758,6 +1938,15 @@ export default function GameMain() {
             </div>
           )}
 
+          {currentView === 'chat' && (
+            <div style={{ height: '85vh' }}>
+              <PlayerChat 
+                gameState={gameState}
+                onActionMessage={setActionMessage}
+              />
+            </div>
+          )}
+
           {currentView === 'log' && (
             <div>
               {/* 操作説明セクション（機能フラグで制御） */}
@@ -1943,6 +2132,61 @@ export default function GameMain() {
                       </div>
                     </div>
                   </div>
+
+                  {/* チャット統計 */}
+                  {gameState.isFeatureEnabled('playerChat') && (() => {
+                    const chatStatsResult = gameState.getChatStats();
+                    return chatStatsResult.success ? (
+                      <div style={{
+                        background: '#e3f2fd',
+                        border: '2px solid #2196f3',
+                        borderRadius: 8,
+                        padding: '1rem'
+                      }}>
+                        <h4 style={{ margin: '0 0 1rem 0', color: '#1976d2' }}>
+                          💬 チャット統計
+                        </h4>
+                        <div style={{ display: 'grid', gap: '0.5rem', fontSize: '0.9rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>総メッセージ数:</span>
+                            <span style={{ fontWeight: 'bold', color: '#1976d2' }}>
+                              {chatStatsResult.stats.totalMessages}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>1時間以内メッセージ:</span>
+                            <span style={{ fontWeight: 'bold', color: '#388e3c' }}>
+                              {chatStatsResult.stats.messagesLastHour}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>1日以内メッセージ:</span>
+                            <span style={{ fontWeight: 'bold', color: '#388e3c' }}>
+                              {chatStatsResult.stats.messagesLastDay}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>アクティブチャットユーザー:</span>
+                            <span style={{ fontWeight: 'bold', color: '#7b1fa2' }}>
+                              {chatStatsResult.stats.activeUsers}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>ブロック済みユーザー:</span>
+                            <span style={{ fontWeight: 'bold', color: '#d32f2f' }}>
+                              {chatStatsResult.stats.blockedUsers}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>報告済みメッセージ:</span>
+                            <span style={{ fontWeight: 'bold', color: '#f57c00' }}>
+                              {chatStatsResult.stats.reportedMessages}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
 
                   {/* アクティブセッション一覧 */}
                   <div style={{

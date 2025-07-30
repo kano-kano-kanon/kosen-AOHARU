@@ -125,6 +125,23 @@ class GameState {
     this.npcEventHistory = [];     // NPCイベント履歴
     this.playerPath = null;        // 進路選択結果
     
+    // チャットシステム（LocalStorage使用でプレイヤー間共有）
+    this.chatSystem = {
+      messages: [],           // 全チャットメッセージ
+      maxMessages: 100,       // 最大保存メッセージ数
+      blockedUsers: new Set(), // ブロックされたユーザー
+      reportedMessages: new Set(), // 報告されたメッセージ
+      chatRooms: new Map(),   // チャットルーム（将来の拡張用）
+      messageIdCounter: 1,    // メッセージID管理
+      playerNames: new Map(), // playerId -> カスタム名前のマッピング
+      lastSyncTime: 0,        // 最後の同期時刻
+      syncInterval: 3000,     // 同期間隔（3秒）
+      simulateOtherPlayers: true // 他プレイヤーのシミュレート
+    };
+    
+    // チャットデータの初期化と読み込み
+    this.initializeChatSystem();
+    
     // ワークスペース監視システム
     this.workspaceMonitoring = {
       sessions: new Map(), // sessionId -> { playerId, startTime, lastActivity, currentView, suspiciousActivity }
@@ -2428,11 +2445,301 @@ class GameState {
   }
 
   // プレイヤーチャット（playerChat フラグで制御）
-  sendChatMessage(message) {
-    if (!this.isFeatureEnabled('playerChat')) return { success: false, message: 'チャット機能は無効です' };
+  sendChatMessage(message, targetPlayerId = null) {
+    if (!this.isFeatureEnabled('playerChat')) {
+      return { success: false, message: 'チャット機能は無効です' };
+    }
     
-    // 実装は後で追加
-    return { success: false, message: 'チャット機能は開発中です' };
+    // 入力検証
+    if (!message || typeof message !== 'string') {
+      return { success: false, message: 'メッセージが無効です' };
+    }
+    
+    // メッセージ長制限
+    if (message.length > 200) {
+      return { success: false, message: 'メッセージが長すぎます（最大200文字）' };
+    }
+    
+    // 空白のみのメッセージをチェック
+    if (message.trim().length === 0) {
+      return { success: false, message: 'メッセージが空です' };
+    }
+    
+    // 現在のプレイヤー情報を取得
+    const senderSession = this.workspaceMonitoring.sessions.get(this.currentSessionId);
+    if (!senderSession) {
+      return { success: false, message: 'セッション情報が見つかりません' };
+    }
+    
+    // ブロックされているかチェック
+    if (this.chatSystem.blockedUsers.has(senderSession.playerId)) {
+      return { success: false, message: 'あなたはチャットから一時的にブロックされています' };
+    }
+    
+    // 不適切な内容をフィルタリング
+    const filteredMessage = this.filterChatMessage(message);
+    if (!filteredMessage) {
+      return { success: false, message: '不適切な内容が含まれています' };
+    }
+    
+    // メッセージオブジェクトを作成
+    const chatMessage = {
+      id: this.chatSystem.messageIdCounter++,
+      senderId: senderSession.playerId,
+      senderName: this.generatePlayerDisplayName(senderSession.playerId),
+      message: filteredMessage,
+      timestamp: Date.now(),
+      targetPlayerId: targetPlayerId, // null = 全体チャット
+      type: targetPlayerId ? 'direct' : 'public',
+      isAdmin: this.workspaceMonitoring.adminSessions.has(this.currentSessionId)
+    };
+    
+    // メッセージを保存
+    this.chatSystem.messages.push(chatMessage);
+    
+    // メッセージ数制限
+    if (this.chatSystem.messages.length > this.chatSystem.maxMessages) {
+      this.chatSystem.messages = this.chatSystem.messages.slice(-this.chatSystem.maxMessages);
+    }
+    
+    // チャットデータを同期（LocalStorage）
+    this.syncChatData();
+    
+    // セキュリティログ
+    this.logSecurityEvent('chat_message', {
+      messageId: chatMessage.id,
+      messageLength: message.length,
+      targetPlayerId: targetPlayerId
+    });
+    
+    // アクティビティを更新
+    this.updateCurrentView('chat');
+    
+    return { 
+      success: true, 
+      message: 'メッセージを送信しました',
+      messageId: chatMessage.id
+    };
+  }
+
+  // チャットメッセージのフィルタリング
+  filterChatMessage(message) {
+    // 基本的な不適切語フィルター
+    const bannedWords = ['馬鹿', 'バカ', 'ばか', '死ね', '殺す', 'アホ', 'チート', 'hack'];
+    const lowerMessage = message.toLowerCase();
+    
+    for (const word of bannedWords) {
+      if (lowerMessage.includes(word.toLowerCase())) {
+        return null; // フィルタリングで拒否
+      }
+    }
+    
+    // HTMLタグを除去
+    return message.replace(/<[^>]*>/g, '');
+  }
+
+  // プレイヤー表示名を生成
+  generatePlayerDisplayName(playerId) {
+    // 管理者の場合は「管理者」と表示
+    if (this.workspaceMonitoring.adminSessions.has(this.currentSessionId) && 
+        this.workspaceMonitoring.sessions.get(this.currentSessionId)?.playerId === playerId) {
+      return '管理者';
+    }
+    
+    // カスタム名前が設定されている場合はそれを使用
+    if (this.chatSystem.playerNames.has(playerId)) {
+      return this.chatSystem.playerNames.get(playerId);
+    }
+    
+    // デフォルトの匿名表示名を生成
+    const suffix = playerId.split('_').pop() || '0000';
+    return `プレイヤー${suffix.substring(0, 4)}`;
+  }
+
+  // チャットメッセージ一覧を取得
+  getChatMessages(limit = 50) {
+    if (!this.isFeatureEnabled('playerChat')) {
+      return { success: false, message: 'チャット機能は無効です' };
+    }
+    
+    // 最新のメッセージを他のプレイヤーから読み込み
+    this.loadSharedMessages();
+    
+    const messages = this.chatSystem.messages
+      .slice(-limit) // 最新のメッセージから指定数取得
+      .filter(msg => {
+        // 報告されたメッセージは表示しない
+        if (this.chatSystem.reportedMessages.has(msg.id)) {
+          return false;
+        }
+        
+        // プライベートメッセージの場合、送信者または受信者のみ表示
+        if (msg.type === 'direct') {
+          const currentSession = this.workspaceMonitoring.sessions.get(this.currentSessionId);
+          return currentSession && (
+            msg.senderId === currentSession.playerId || 
+            msg.targetPlayerId === currentSession.playerId
+          );
+        }
+        
+        return true; // パブリックメッセージは全員に表示
+      })
+      .map(msg => ({
+        id: msg.id,
+        senderName: msg.senderName,
+        message: msg.message,
+        timestamp: msg.timestamp,
+        type: msg.type,
+        isAdmin: msg.isAdmin,
+        // セキュリティのためにプレイヤーIDは含めない
+      }));
+    
+    return { success: true, messages: messages };
+  }
+
+  // チャットメッセージを報告
+  reportChatMessage(messageId) {
+    if (!this.isFeatureEnabled('playerChat')) {
+      return { success: false, message: 'チャット機能は無効です' };
+    }
+    
+    const message = this.chatSystem.messages.find(msg => msg.id === messageId);
+    if (!message) {
+      return { success: false, message: 'メッセージが見つかりません' };
+    }
+    
+    this.chatSystem.reportedMessages.add(messageId);
+    
+    // セキュリティログ
+    this.logSecurityEvent('chat_report', {
+      reportedMessageId: messageId,
+      reportedSenderId: message.senderId
+    });
+    
+    return { success: true, message: 'メッセージを報告しました' };
+  }
+
+  // プレイヤーをブロック（管理者のみ）
+  blockPlayerFromChat(playerId) {
+    if (!this.isAdmin) {
+      return { success: false, message: '管理者権限が必要です' };
+    }
+    
+    this.chatSystem.blockedUsers.add(playerId);
+    
+    this.logSecurityEvent('chat_block', {
+      blockedPlayerId: playerId,
+      adminSessionId: this.currentSessionId
+    });
+    
+    return { success: true, message: `プレイヤー ${playerId} をブロックしました` };
+  }
+
+  // プレイヤーのブロックを解除（管理者のみ）
+  unblockPlayerFromChat(playerId) {
+    if (!this.isAdmin) {
+      return { success: false, message: '管理者権限が必要です' };
+    }
+    
+    this.chatSystem.blockedUsers.delete(playerId);
+    
+    this.logSecurityEvent('chat_unblock', {
+      unblockedPlayerId: playerId,
+      adminSessionId: this.currentSessionId
+    });
+    
+    return { success: true, message: `プレイヤー ${playerId} のブロックを解除しました` };
+  }
+
+  // チャット統計を取得（管理者のみ）
+  getChatStats() {
+    if (!this.isAdmin) {
+      return { success: false, message: '管理者権限が必要です' };
+    }
+    
+    const now = Date.now();
+    const oneHourAgo = now - (60 * 60 * 1000);
+    const oneDayAgo = now - (24 * 60 * 60 * 1000);
+    
+    const recentMessages = this.chatSystem.messages.filter(msg => msg.timestamp > oneHourAgo);
+    const dailyMessages = this.chatSystem.messages.filter(msg => msg.timestamp > oneDayAgo);
+    
+    return {
+      success: true,
+      stats: {
+        totalMessages: this.chatSystem.messages.length,
+        messagesLastHour: recentMessages.length,
+        messagesLastDay: dailyMessages.length,
+        blockedUsers: this.chatSystem.blockedUsers.size,
+        reportedMessages: this.chatSystem.reportedMessages.size,
+        activeUsers: new Set(recentMessages.map(msg => msg.senderId)).size
+      }
+    };
+  }
+
+  // プレイヤー名前を変更
+  setPlayerDisplayName(newName) {
+    if (!this.isFeatureEnabled('playerChat')) {
+      return { success: false, message: 'チャット機能は無効です' };
+    }
+    
+    // 入力検証
+    if (!newName || typeof newName !== 'string') {
+      return { success: false, message: '名前が無効です' };
+    }
+    
+    // 名前の長さ制限
+    if (newName.length > 20) {
+      return { success: false, message: '名前が長すぎます（最大20文字）' };
+    }
+    
+    // 空白のみの名前をチェック
+    if (newName.trim().length === 0) {
+      return { success: false, message: '名前が空です' };
+    }
+    
+    // 不適切語フィルター
+    const filteredName = this.filterChatMessage(newName.trim());
+    if (!filteredName) {
+      return { success: false, message: '不適切な内容が含まれています' };
+    }
+    
+    // 管理者は名前を変更できない
+    if (this.workspaceMonitoring.adminSessions.has(this.currentSessionId)) {
+      return { success: false, message: '管理者は名前を変更できません' };
+    }
+    
+    // 現在のプレイヤー情報を取得
+    const currentSession = this.workspaceMonitoring.sessions.get(this.currentSessionId);
+    if (!currentSession) {
+      return { success: false, message: 'セッション情報が見つかりません' };
+    }
+    
+    // 名前を設定
+    this.chatSystem.playerNames.set(currentSession.playerId, filteredName);
+    
+    // セキュリティログ
+    this.logSecurityEvent('player_name_change', {
+      oldName: this.generatePlayerDisplayName(currentSession.playerId),
+      newName: filteredName
+    });
+    
+    return { success: true, message: `名前を「${filteredName}」に変更しました` };
+  }
+
+  // 現在のプレイヤー名前を取得
+  getCurrentPlayerDisplayName() {
+    if (!this.isFeatureEnabled('playerChat')) {
+      return { success: false, message: 'チャット機能は無効です' };
+    }
+    
+    const currentSession = this.workspaceMonitoring.sessions.get(this.currentSessionId);
+    if (!currentSession) {
+      return { success: false, message: 'セッション情報が見つかりません' };
+    }
+    
+    const displayName = this.generatePlayerDisplayName(currentSession.playerId);
+    return { success: true, name: displayName };
   }
 
   // ===============================
@@ -2451,7 +2758,148 @@ class GameState {
     this.playerPath = path;
     return { success: true, message: `進路を${path}に設定しました` };
   }
-  
+
+  // ===============================
+  // チャット同期システム（LocalStorage使用）
+  // ===============================
+
+  // チャットシステム初期化
+  initializeChatSystem() {
+    try {
+      // LocalStorageからチャットデータを読み込み
+      const savedChatData = localStorage.getItem('gameChat_shared');
+      if (savedChatData) {
+        const chatData = JSON.parse(savedChatData);
+        this.chatSystem.messages = chatData.messages || [];
+        this.chatSystem.messageIdCounter = chatData.messageIdCounter || 1;
+        this.chatSystem.lastSyncTime = chatData.lastSyncTime || 0;
+      }
+
+      // 定期同期の設定
+      this.startChatSync();
+
+      // 他プレイヤーシミュレーションの開始
+      if (this.chatSystem.simulateOtherPlayers) {
+        this.startPlayerSimulation();
+      }
+
+    } catch (error) {
+      console.error('チャットシステム初期化エラー:', error);
+    }
+  }
+
+  // チャットデータの同期
+  syncChatData() {
+    try {
+      const chatData = {
+        messages: this.chatSystem.messages,
+        messageIdCounter: this.chatSystem.messageIdCounter,
+        lastSyncTime: Date.now()
+      };
+      
+      localStorage.setItem('gameChat_shared', JSON.stringify(chatData));
+      this.chatSystem.lastSyncTime = Date.now();
+    } catch (error) {
+      console.error('チャット同期エラー:', error);
+    }
+  }
+
+  // 他のプレイヤーからのメッセージを読み込み
+  loadSharedMessages() {
+    try {
+      const savedChatData = localStorage.getItem('gameChat_shared');
+      if (savedChatData) {
+        const chatData = JSON.parse(savedChatData);
+        const newMessages = chatData.messages || [];
+        
+        // 新しいメッセージがあるかチェック
+        if (newMessages.length > this.chatSystem.messages.length) {
+          this.chatSystem.messages = newMessages;
+          this.chatSystem.messageIdCounter = Math.max(
+            this.chatSystem.messageIdCounter,
+            chatData.messageIdCounter || 1
+          );
+          return true; // 新しいメッセージがある
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('共有メッセージ読み込みエラー:', error);
+      return false;
+    }
+  }
+
+  // 定期同期開始
+  startChatSync() {
+    setInterval(() => {
+      if (this.isFeatureEnabled('playerChat')) {
+        this.loadSharedMessages();
+      }
+    }, this.chatSystem.syncInterval);
+  }
+
+  // 他プレイヤーのシミュレーション
+  startPlayerSimulation() {
+    const simulatedPlayers = [
+      { name: '高専太郎', id: 'sim_player_1' },
+      { name: '工学花子', id: 'sim_player_2' },
+      { name: 'プログラマー次郎', id: 'sim_player_3' },
+      { name: '電子工学美咲', id: 'sim_player_4' }
+    ];
+
+    const simulatedMessages = [
+      'こんにちは！新しいプレイヤーです！',
+      'この課題難しいですね...誰かヒントください😅',
+      'レポート提出期限まであと2日！頑張りましょう💪',
+      'プログラミングの宿題で詰まってます...',
+      '実験レポートの書き方が分からない😭',
+      'みんなはどの進路考えてますか？',
+      '先輩に質問したいことがたくさんある！',
+      'テスト勉強頑張ってます📚',
+      '友達と一緒に勉強すると楽しいですね',
+      '高専生活楽しんでます✨',
+      '今日の授業内容、復習しないと...',
+      'クラブ活動も忙しいけど充実してる！'
+    ];
+
+    // 10-30分間隔でランダムなメッセージを送信
+    const sendSimulatedMessage = () => {
+      if (!this.isFeatureEnabled('playerChat')) return;
+
+      const player = simulatedPlayers[Math.floor(Math.random() * simulatedPlayers.length)];
+      const message = simulatedMessages[Math.floor(Math.random() * simulatedMessages.length)];
+
+      const chatMessage = {
+        id: this.chatSystem.messageIdCounter++,
+        senderId: player.id,
+        senderName: player.name,
+        message: message,
+        timestamp: Date.now(),
+        targetPlayerId: null,
+        type: 'public',
+        isAdmin: false,
+        isSimulated: true // シミュレートされたメッセージとしてマーク
+      };
+
+      this.chatSystem.messages.push(chatMessage);
+
+      // メッセージ数制限
+      if (this.chatSystem.messages.length > this.chatSystem.maxMessages) {
+        this.chatSystem.messages = this.chatSystem.messages.slice(-this.chatSystem.maxMessages);
+      }
+
+      // 同期
+      this.syncChatData();
+
+      // 次のメッセージをスケジュール
+      const nextInterval = (10 + Math.random() * 20) * 60 * 1000; // 10-30分
+      setTimeout(sendSimulatedMessage, nextInterval);
+    };
+
+    // 初回メッセージを5-15秒後に送信
+    const initialDelay = (5 + Math.random() * 10) * 1000;
+    setTimeout(sendSimulatedMessage, initialDelay);
+  }
 }
 
 export default GameState;
