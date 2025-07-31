@@ -1,0 +1,24 @@
+# チャットサーバー用Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# パッケージファイルをコピー
+COPY package*.json ./
+
+# 依存関係をインストール
+RUN npm ci --only=production
+
+# アプリケーションファイルをコピー
+COPY chat-server.js ./
+COPY src/server/ ./src/server/
+
+# ポートを公開
+EXPOSE 3005
+
+# ヘルスチェック
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD nc -z localhost 3005 || exit 1
+
+# チャットサーバーを起動
+CMD ["node", "chat-server.js"]

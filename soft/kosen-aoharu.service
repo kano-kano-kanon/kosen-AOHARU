@@ -1,0 +1,28 @@
+[Unit]
+Description=Kosen AOHARU Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/workspaces/kosen-AOHARU/soft
+ExecStart=/usr/bin/node start-prod.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# ログ設定
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kosen-aoharu
+
+# セキュリティ設定
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/workspaces/kosen-AOHARU/soft/logs
+
+[Install]
+WantedBy=multi-user.target

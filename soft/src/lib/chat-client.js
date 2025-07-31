@@ -14,39 +14,159 @@ class ChatClient {
     this.connectionCallbacks = new Set();
     this.onlineUsers = [];
     this.typingUsers = new Set();
+    this.connectionRetries = 0;
+    this.maxRetries = 3;
+    this.isInitializing = false;
     
+    // すぐに初期化を開始
     this.initializeConnection();
   }
 
   initializeConnection() {
-    const SERVER_URL = 'http://localhost:5000';
+    if (this.isInitializing) {
+      console.log('既に初期化中です');
+      return;
+    }
     
-    this.socket = io(SERVER_URL, {
-      transports: ['websocket', 'polling'],
-      timeout: 20000,
-      forceNew: true
-    });
+    this.isInitializing = true;
+    const SERVER_URL = 'http://localhost:3005';
+    
+    console.log('チャットクライアント初期化中...', SERVER_URL);
+    
+    // 既存の接続があれば切断
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    
+    // 接続中状態を通知
+    this.notifyConnectionChange('connecting', '接続を試行中...');
+    
+    try {
+      this.socket = io(SERVER_URL, {
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+        forceNew: true,
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 1000,
+        autoConnect: true,
+        upgrade: true,
+        rememberUpgrade: false
+      });
 
-    this.setupEventListeners();
+      this.setupEventListeners();
+      
+      // 接続タイムアウト処理（延長）
+      setTimeout(() => {
+        if (!this.isConnected && this.isInitializing) {
+          console.warn('接続タイムアウト - フォールバックモードに切り替え');
+          this.fallbackToLocalMode();
+        }
+      }, 15000);
+      
+    } catch (error) {
+      console.error('Socket.IO初期化エラー:', error);
+      this.fallbackToLocalMode();
+    }
+  }
+
+  // フォールバックモード（ローカル専用）
+  fallbackToLocalMode() {
+    console.log('🔄 ローカルフォールバックモードに切り替えます');
+    this.isConnected = false;
+    this.isInitializing = false;
+    this.notifyConnectionChange('fallback', 'サーバー接続失敗 - ローカルモードで動作');
+  }
+
+  // 手動再接続
+  reconnect() {
+    console.log('🔄 手動再接続を試行します...');
+    this.connectionRetries = 0;
+    this.isInitializing = false;
+    
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    
+    this.initializeConnection();
   }
 
   setupEventListeners() {
     // 接続イベント
     this.socket.on('connect', () => {
-      console.log('チャットサーバーに接続しました');
+      console.log('✅ チャットサーバーに接続しました');
       this.isConnected = true;
+      this.isInitializing = false;
+      this.connectionRetries = 0;
       this.notifyConnectionChange('connected');
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('チャットサーバーから切断されました');
+    this.socket.on('disconnect', (reason) => {
+      console.log('❌ チャットサーバーから切断されました:', reason);
       this.isConnected = false;
+      this.isInitializing = false;
       this.notifyConnectionChange('disconnected');
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('接続エラー:', error);
-      this.notifyConnectionChange('error', error.message);
+      console.error('❌ 接続エラー詳細:', {
+        message: error.message,
+        description: error.description,
+        context: error.context,
+        type: error.type
+      });
+      
+      this.connectionRetries++;
+      
+      // 具体的なエラーメッセージを生成
+      let errorMessage = 'サーバー接続エラー';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.description) {
+        errorMessage = error.description;
+      }
+      
+      console.log(`接続失敗の理由: ${errorMessage} (試行回数: ${this.connectionRetries})`);
+      
+      // サーバーが起動している場合は接続を再試行
+      if (this.connectionRetries <= this.maxRetries) {
+        console.log(`3秒後に再接続を試行します...`);
+        this.notifyConnectionChange('reconnecting', `再接続中... (${this.connectionRetries}/${this.maxRetries})`);
+        
+        setTimeout(() => {
+          if (!this.isConnected) {
+            console.log('再接続を試行中...');
+            this.socket.connect();
+          }
+        }, 3000);
+      } else {
+        console.log('最大再試行回数に達しました。フォールバックモードに切り替えます。');
+        this.fallbackToLocalMode();
+      }
+    });
+
+    this.socket.on('error', (error) => {
+      console.error('Socket.IOエラー:', error);
+      this.notifyMessage('error', { message: error.message || 'Unknown error' });
+    });
+
+    this.socket.on('reconnect_error', (error) => {
+      console.error('再接続エラー:', error);
+    });
+
+    this.socket.on('reconnect_failed', () => {
+      console.error('再接続に失敗しました');
+      this.notifyConnectionChange('error', '再接続に失敗しました');
+    });
+
+    this.socket.on('reconnecting', (attemptNumber) => {
+      console.log(`再接続試行中... (${attemptNumber}回目)`);
+    });
+
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log(`再接続成功 (${attemptNumber}回目の試行で成功)`);
     });
 
     // チャットイベント

@@ -25,103 +25,167 @@ export default function PlayerChat({ gameState, onActionMessage }) {
 
   // WebSocketチャットクライアント初期化
   useEffect(() => {
-    chatClient.current = getChatClient();
+    let isComponentMounted = true;
+    let connectionTimeout;
+    
+    const initializeChat = async () => {
+      try {
+        console.log('チャットコンポーネント初期化開始');
+        
+        // 初期化タイムアウト設定
+        connectionTimeout = setTimeout(() => {
+          if (isComponentMounted && connectionStatus === 'connecting') {
+            console.log('チャット初期化タイムアウト - フォールバックモード');
+            setConnectionStatus('fallback');
+            if (onActionMessage) {
+              onActionMessage('⚠️ チャットサーバーに接続できませんでした - ローカルモードで動作');
+            }
+          }
+        }, 8000);
+        
+        chatClient.current = getChatClient();
 
-    // 接続状態の監視
-    const unsubscribeConnection = chatClient.current.onConnectionChange((status, message) => {
-      setConnectionStatus(status);
-      if (status === 'connected') {
-        if (onActionMessage) {
-          onActionMessage('✅ チャットサーバーに接続しました');
-        }
-        // チャットに参加
-        chatClient.current.joinChat({
-          username: gameState.isAdmin ? '管理者' : null,
-          isAdmin: gameState.isAdmin
+        // 接続状態の監視
+        const unsubscribeConnection = chatClient.current.onConnectionChange((status, message) => {
+          if (!isComponentMounted) return;
+          
+          console.log('接続状態変更:', status, message);
+          setConnectionStatus(status);
+          
+          if (status === 'connected') {
+            if (onActionMessage) {
+              onActionMessage('✅ チャットサーバーに接続しました');
+            }
+            // チャットに参加
+            try {
+              chatClient.current.joinChat({
+                username: gameState.isAdmin ? '管理者' : null,
+                isAdmin: gameState.isAdmin
+              });
+            } catch (error) {
+              console.error('チャット参加エラー:', error);
+            }
+          } else if (status === 'disconnected') {
+            if (onActionMessage) {
+              onActionMessage('❌ チャットサーバーから切断されました');
+            }
+          } else if (status === 'reconnecting') {
+            if (onActionMessage) {
+              onActionMessage('🔄 ' + (message || 'サーバーに再接続中...'));
+            }
+          } else if (status === 'fallback') {
+            if (onActionMessage) {
+              onActionMessage('⚠️ ' + message);
+            }
+          } else if (status === 'error') {
+            if (onActionMessage) {
+              onActionMessage(`❌ 接続エラー: ${message}`);
+            }
+          }
         });
-      } else if (status === 'disconnected') {
+
+        // メッセージイベントの監視
+        const unsubscribeMessages = chatClient.current.onMessage((type, data) => {
+          if (!isComponentMounted) return;
+          
+          console.log('メッセージイベント:', type, data);
+          
+          switch (type) {
+            case 'history':
+              setMessages(data.messages || []);
+              break;
+              
+            case 'new_message':
+              setMessages(prev => [...prev, data]);
+              break;
+              
+            case 'private_message':
+              setMessages(prev => [...prev, data]);
+              break;
+              
+            case 'user_joined':
+              if (onActionMessage) {
+                onActionMessage(`👋 ${data.username} がチャットに参加しました`);
+              }
+              break;
+              
+            case 'user_left':
+              if (onActionMessage) {
+                onActionMessage(`👋 ${data.username} がチャットから退出しました`);
+              }
+              break;
+              
+            case 'username_changed':
+              if (onActionMessage) {
+                onActionMessage(`✏️ ${data.oldUsername} が ${data.newUsername} に名前を変更しました`);
+              }
+              break;
+              
+            case 'online_users':
+              setOnlineUsers(data.users || []);
+              break;
+              
+            case 'typing_update':
+              setTypingUsers(data.typingUsers || []);
+              break;
+              
+            case 'username_change_success':
+              setCurrentPlayerName(data.newUsername);
+              setShowNameChange(false);
+              setNewPlayerName('');
+              if (onActionMessage) {
+                onActionMessage(data.message);
+              }
+              break;
+              
+            case 'error':
+              console.error('チャットエラー:', data);
+              if (onActionMessage) {
+                onActionMessage(`❌ ${data.message}`);
+              }
+              break;
+              
+            case 'report_success':
+            case 'block_success':
+              if (onActionMessage) {
+                onActionMessage(`✅ ${data.message}`);
+              }
+              break;
+              
+            default:
+              console.log('未処理のメッセージタイプ:', type, data);
+          }
+        });
+
+        // クリーンアップ関数を返す
+        return () => {
+          isComponentMounted = false;
+          if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+          }
+          unsubscribeConnection();
+          unsubscribeMessages();
+        };
+      } catch (error) {
+        console.error('チャット初期化エラー:', error);
         if (onActionMessage) {
-          onActionMessage('❌ チャットサーバーから切断されました');
-        }
-      } else if (status === 'error') {
-        if (onActionMessage) {
-          onActionMessage(`❌ 接続エラー: ${message}`);
+          onActionMessage(`❌ チャット初期化エラー: ${error.message}`);
         }
       }
-    });
+    };
 
-    // メッセージイベントの監視
-    const unsubscribeMessages = chatClient.current.onMessage((type, data) => {
-      switch (type) {
-        case 'history':
-          setMessages(data.messages || []);
-          break;
-          
-        case 'new_message':
-          setMessages(prev => [...prev, data]);
-          break;
-          
-        case 'private_message':
-          setMessages(prev => [...prev, data]);
-          break;
-          
-        case 'user_joined':
-          if (onActionMessage) {
-            onActionMessage(`👋 ${data.username} がチャットに参加しました`);
-          }
-          break;
-          
-        case 'user_left':
-          if (onActionMessage) {
-            onActionMessage(`👋 ${data.username} がチャットから退出しました`);
-          }
-          break;
-          
-        case 'username_changed':
-          if (onActionMessage) {
-            onActionMessage(`✏️ ${data.oldUsername} が ${data.newUsername} に名前を変更しました`);
-          }
-          break;
-          
-        case 'online_users':
-          setOnlineUsers(data.users || []);
-          break;
-          
-        case 'typing_update':
-          setTypingUsers(data.typingUsers || []);
-          break;
-          
-        case 'username_change_success':
-          setCurrentPlayerName(data.newUsername);
-          setShowNameChange(false);
-          setNewPlayerName('');
-          if (onActionMessage) {
-            onActionMessage(data.message);
-          }
-          break;
-          
-        case 'error':
-          if (onActionMessage) {
-            onActionMessage(`❌ ${data.message}`);
-          }
-          break;
-          
-        case 'report_success':
-        case 'block_success':
-          if (onActionMessage) {
-            onActionMessage(`✅ ${data.message}`);
-          }
-          break;
-          
-        default:
-          console.log('未処理のメッセージタイプ:', type, data);
-      }
-    });
-
-    // クリーンアップ
+    const cleanup = initializeChat();
+    
     return () => {
-      unsubscribeConnection();
-      unsubscribeMessages();
+      isComponentMounted = false;
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+      }
+      if (cleanup && typeof cleanup.then === 'function') {
+        cleanup.then(cleanupFn => cleanupFn && cleanupFn());
+      } else if (cleanup && typeof cleanup === 'function') {
+        cleanup();
+      }
     };
   }, [gameState.isAdmin, onActionMessage]);
 
@@ -272,6 +336,10 @@ export default function PlayerChat({ gameState, onActionMessage }) {
         return { text: '🟢 オンライン', color: '#28a745' };
       case 'disconnected':
         return { text: '🔴 切断', color: '#dc3545' };
+      case 'reconnecting':
+        return { text: '🔄 再接続中...', color: '#007bff' };
+      case 'fallback':
+        return { text: '⚠️ ローカル', color: '#17a2b8' };
       case 'error':
         return { text: '⚠️ エラー', color: '#fd7e14' };
       default:
@@ -311,6 +379,26 @@ export default function PlayerChat({ gameState, onActionMessage }) {
               <span style={{ fontSize: '0.8rem', color: '#6c757d' }}>
                 👥 オンライン: {onlineUsers.length}人
               </span>
+            )}
+            {(connectionStatus === 'fallback' || connectionStatus === 'error' || connectionStatus === 'disconnected') && (
+              <button
+                onClick={() => {
+                  if (chatClient.current) {
+                    chatClient.current.reconnect();
+                  }
+                }}
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  background: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontSize: '0.8rem'
+                }}
+              >
+                🔄 再接続
+              </button>
             )}
           </div>
         </div>

@@ -25,23 +25,23 @@ class ChatServer {
     // Socket.IOサーバーを作成
     this.io = new Server(this.httpServer, {
       cors: {
-        origin: ["http://localhost:3000", "https://localhost:3000"],
+        origin: "*",
         methods: ["GET", "POST"],
         allowedHeaders: ["*"],
-        credentials: true
+        credentials: false
       },
-      transports: ['websocket', 'polling']
-    });
-
-    this.setupSocketHandlers();
+      transports: ['websocket', 'polling'],
+      allowEIO3: true
+    });    this.setupSocketHandlers();
   }
 
   setupSocketHandlers() {
     this.io.on('connection', (socket) => {
-      console.log(`新しいユーザーが接続しました: ${socket.id}`);
+      console.log(`✅ 新しいユーザーが接続しました: ${socket.id} (${socket.handshake.address})`);
 
       // ユーザー参加処理
       socket.on('join_chat', (userData) => {
+        console.log(`� ユーザー参加リクエスト:`, userData);
         this.handleUserJoin(socket, userData);
       });
 
@@ -71,8 +71,14 @@ class ChatServer {
       });
 
       // 切断処理
-      socket.on('disconnect', () => {
+      socket.on('disconnect', (reason) => {
+        console.log(`❌ ユーザー切断: ${socket.id}, 理由: ${reason}`);
         this.handleUserDisconnect(socket);
+      });
+
+      // エラー処理
+      socket.on('error', (error) => {
+        console.error(`🚨 Socket エラー (${socket.id}):`, error);
       });
 
       // タイピング状態

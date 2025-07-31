@@ -4,7 +4,7 @@
 
 const ChatServer = require('./src/server/chat-server.js');
 
-const server = new ChatServer(5000);
+const server = new ChatServer(3005);
 
 // サーバー起動
 server.start();
