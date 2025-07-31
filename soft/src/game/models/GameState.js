@@ -92,8 +92,11 @@ class GameState {
       basicShop: true,// ショップ
       basicNPCInteraction: true, //NPC 
       chapter3: true,           // 第3章：進路選択
-      chapter4: true,           // 第4章：高専組インターン
-      chapter5: true,           // 第5章：高専組研究室配属
+      chapter4: true,           // 第4章：進路実現・恋愛クライマックス
+      chapter5: true,           // 第5章：卒業年・人生選択の実現
+      chapter6: true,           // 第6章：アフターストーリー・新たな人生
+      chapter7: true,           // 第7章：社会人中堅・専門性確立
+      chapter8: true,           // 第8章：真の大人・人生の完成
       skillSystem: true,        // スキル戦闘使用
       gachaSystem: true,        // ガチャショップ
       npcEvents: true,          // NPC好感度イベント
@@ -322,6 +325,9 @@ class GameState {
       chapter3: ['chapter1', 'chapter2'],
       chapter4: ['chapter3'],
       chapter5: ['chapter4'],
+      chapter6: ['chapter5'],
+      chapter7: ['chapter6'],
+      chapter8: ['chapter7'],
       skillSystem: ['basicBattle'],
       gachaSystem: ['basicShop'],
       npcEvents: ['basicNPCInteraction'],
@@ -700,7 +706,7 @@ class GameState {
     
     // 通常機能を有効化（チート系は除く）
     const normalFeatures = [
-      'chapter1', 'chapter2', 'chapter3', 'chapter4', 'chapter5',
+      'chapter1', 'chapter2', 'chapter3', 'chapter4', 'chapter5', 'chapter6', 'chapter7', 'chapter8',
       'basicBattle', 'basicShop', 'basicNPCInteraction',
       'skillSystem', 'gachaSystem', 'npcEvents', 
       'extendedItems', 'extendedEnemies', 'playerChat', 
@@ -806,113 +812,245 @@ class GameState {
         }
         break;
       case 4:
-        // 第4章：高専組インターン（機能フラグで制御）
-        if (this.isFeatureEnabled('chapter4') && this.playerPath === 'kosen') {
-          this.chapterGoals = {
-            requiredCredits: 12,
-            specialRequirement: 'インターン完了',
-            internshipType: null
-          };
-          this.chapterEvents = [
-            { id: 'internshipSearch', name: 'インターン先探し', completed: false, type: 'choice',
-              choices: [
-                { id: 'tech_company', name: 'IT企業', effect: { theory: 15, social: 10 } },
-                { id: 'manufacturing', name: '製造業', effect: { submission: 20, money: 1000 } },
-                { id: 'startup', name: 'スタートアップ', effect: { social: 15, stress: 10 } }
-              ]
-            },
-            { id: 'internshipWork', name: 'インターン実習', completed: false, type: 'battle',
-              enemy: { name: '実務の壁', hp: 200, maxHP: 200, expReward: 500, submissionBonus: 15, description: '実際の業務で直面する困難' } },
-            { id: 'socialImplementation', name: '社会実装プロジェクト', completed: false, type: 'boss',
-              requirements: { submission: 150, theory: 140, social: 100 },
-              enemy: { name: '社会課題', hp: 250, maxHP: 250, expReward: 800, submissionBonus: 20, description: '社会に役立つシステムの実装' } }
-          ];
-        } else if (this.isFeatureEnabled('chapter4') && this.playerPath === 'university') {
-          // 大学進学組の第4章：大学編入試験
+        // 第4章：進路実現・恋愛クライマックス・卒業研究開始
+        if (this.isFeatureEnabled('chapter4')) {
           this.chapterGoals = {
             requiredCredits: 14,
-            specialRequirement: '編入試験合格',
-            universityChoice: null
+            specialRequirement: '進路実現と恋愛決着',
+            careerRealized: false,
+            relationshipResolved: false,
+            researchStarted: false
           };
-          this.chapterEvents = [
-            { id: 'entranceExamPrep', name: '編入試験対策', completed: false, type: 'battle',
-              enemy: { name: '編入試験模試', hp: 200, maxHP: 200, expReward: 600, submissionBonus: 15, description: '理論力と応用力が試される' } },
-            { id: 'universitySelection', name: '大学選択', completed: false, type: 'choice',
+          
+          // 共通イベント（全ルート）
+          const commonEvents = [
+            { id: 'researchThemeSelection', name: '卒業研究テーマ決定', completed: false, type: 'choice',
               choices: [
-                { id: 'top_university', name: '難関国立大学', requirements: { theory: 200, submission: 150 }, effect: { theory: 30 } },
-                { id: 'engineering_university', name: '工科系大学', requirements: { theory: 150, submission: 180 }, effect: { submission: 25 } },
-                { id: 'private_university', name: '私立大学', requirements: { theory: 120, social: 100 }, effect: { social: 20 } }
+                { id: 'theoretical_research', name: '理論研究', requirements: { theory: 180 }, effect: { theory: 25 } },
+                { id: 'practical_research', name: '実践研究', requirements: { submission: 180 }, effect: { submission: 25 } },
+                { id: 'interdisciplinary_research', name: '学際研究', requirements: { social: 150 }, effect: { social: 20, theory: 15 } }
               ]
             },
-            { id: 'entranceExam', name: '編入試験', completed: false, type: 'battle',
-              enemy: { name: '大学編入試験', hp: 250, maxHP: 250, expReward: 800, submissionBonus: 20, description: '人生の分岐点となる重要な試験' } },
-            { id: 'admissionResult', name: '合格発表', completed: false, type: 'evaluation' }
+            { id: 'loveConfession', name: '恋愛関係の決着', completed: false, type: 'battle',
+              enemy: { name: '告白の勇気', hp: 150, maxHP: 150, expReward: 800, submissionBonus: 20, description: '恋愛関係における最終決断' } },
+            { id: 'multitaskingChallenge', name: 'マルチタスク管理', completed: false, type: 'battle',
+              enemy: { name: 'マルチタスク地獄', hp: 300, maxHP: 300, expReward: 1200, submissionBonus: 30, description: '進路・恋愛・研究の同時管理' } }
           ];
+          
+          // 進路別専用イベント
+          if (this.playerPath === 'advanced_course' || this.finalPath === 'advanced_course') {
+            // 専攻科ルート
+            this.chapterEvents = [
+              ...commonEvents,
+              { id: 'advancedCourseApplication', name: '専攻科受験申込', completed: false, type: 'choice',
+                choices: [
+                  { id: 'theory_major', name: '理論専攻', requirements: { theory: 200 }, effect: { theory: 30 } },
+                  { id: 'applied_major', name: '応用専攻', requirements: { submission: 200 }, effect: { submission: 30 } },
+                  { id: 'interdisciplinary_major', name: '学際専攻', requirements: { theory: 160, submission: 160 }, effect: { theory: 20, submission: 20 } }
+                ]
+              },
+              { id: 'researchProposal', name: '研究計画書作成', completed: false, type: 'battle',
+                enemy: { name: '研究計画書', hp: 250, maxHP: 250, expReward: 1000, submissionBonus: 25, description: '独創的な研究計画の立案' } },
+              { id: 'advancedCourseExam', name: '専攻科入学試験', completed: false, type: 'boss',
+                enemy: { name: '専攻科入学試験官パネル', hp: 400, maxHP: 400, expReward: 2000, submissionBonus: 50, description: '筆記・面接・研究発表の総合勝負' } }
+            ];
+          } else if (this.playerPath === 'university' || this.finalPath === 'university_transfer') {
+            // 大学編入ルート
+            this.chapterEvents = [
+              ...commonEvents,
+              { id: 'universitySelection', name: '志望大学選択', completed: false, type: 'choice',
+                choices: [
+                  { id: 'top_national', name: '最難関国立大学', requirements: { theory: 220, submission: 180 }, effect: { theory: 35, social: 10 } },
+                  { id: 'engineering_focused', name: '工科系名門大学', requirements: { theory: 200, submission: 200 }, effect: { submission: 35, theory: 15 } },
+                  { id: 'balanced_university', name: 'バランス型大学', requirements: { theory: 180, submission: 180, social: 150 }, effect: { theory: 20, submission: 20, social: 20 } }
+                ]
+              },
+              { id: 'transferExamPrep', name: '編入試験集中対策', completed: false, type: 'battle',
+                enemy: { name: '編入試験プレッシャー', hp: 350, maxHP: 350, expReward: 1500, submissionBonus: 35, description: '時間制限と高難易度のプレッシャー' } },
+              { id: 'transferExam', name: '大学編入試験本番', completed: false, type: 'boss',
+                enemy: { name: '志望大学入学試験', hp: 450, maxHP: 450, expReward: 2500, submissionBonus: 60, description: '人生を左右する一発勝負' } }
+            ];
+          } else {
+            // 就職ルート
+            this.chapterEvents = [
+              ...commonEvents,
+              { id: 'companyResearch', name: '企業研究・エントリー', completed: false, type: 'battle',
+                enemy: { name: 'ES大量作成', hp: 200, maxHP: 200, expReward: 800, submissionBonus: 20, description: '10社分のES作成マラソン' } },
+              { id: 'internshipParticipation', name: 'インターンシップ参加', completed: false, type: 'battle',
+                enemy: { name: 'インターン課題', hp: 280, maxHP: 280, expReward: 1200, submissionBonus: 30, description: '実際の業務体験での成果発揮' } },
+              { id: 'jobInterviews', name: '就職活動本格化', completed: false, type: 'boss',
+                enemy: { name: '志望企業最終面接', hp: 350, maxHP: 350, expReward: 1800, submissionBonus: 45, description: '内定獲得をかけた最終決戦' } }
+            ];
+          }
         } else {
           this.chapterGoals = {};
           this.chapterEvents = [];
         }
         break;
       case 5:
-        // 第5章：高専組研究室配属（機能フラグで制御）
-        if (this.isFeatureEnabled('chapter5') && this.playerPath === 'kosen') {
-          this.chapterGoals = {
-            requiredCredits: 16,
-            specialRequirement: '最終進路決定',
-            researchLab: null,
-            finalPath: null
-          };
-          this.chapterEvents = [
-            { id: 'labAssignment', name: '研究室配属', completed: false, type: 'choice',
-              choices: [
-                { id: 'ai_lab', name: 'AI研究室', requirements: { theory: 180 }, effect: { theory: 25 } },
-                { id: 'robotics_lab', name: 'ロボティクス研究室', requirements: { submission: 180 }, effect: { submission: 25 } },
-                { id: 'social_lab', name: '社会システム研究室', requirements: { social: 150 }, effect: { social: 20 } }
-              ]
-            },
-            { id: 'researchProject', name: '研究プロジェクト', completed: false, type: 'battle',
-              enemy: { name: '研究課題', hp: 300, maxHP: 300, expReward: 1000, submissionBonus: 25, description: '独創的な研究が求められる' } },
-            { id: 'finalPathChoice', name: '最終進路選択', completed: false, type: 'choice',
-              choices: [
-                { id: 'university_transfer', name: '大学編入', requirements: { theory: 200, submission: 180 } },
-                { id: 'employment', name: '就職', requirements: { submission: 200, social: 150 } },
-                { id: 'advanced_course', name: '専攻科進学', requirements: { theory: 180, submission: 180, social: 120 } }
-              ]
-            }
-          ];
-        } else if (this.isFeatureEnabled('chapter5') && this.playerPath === 'university') {
-          // 大学進学組の第5章：大学生活
+        // 第5章：卒業年・人生選択の実現・真の最終章
+        if (this.isFeatureEnabled('chapter5')) {
           this.chapterGoals = {
             requiredCredits: 18,
-            specialRequirement: '専門分野決定',
-            researchField: null,
-            graduationPath: null
+            specialRequirement: '卒業研究完成・最終進路確定',
+            researchCompleted: false,
+            finalPathConfirmed: false,
+            relationshipFinal: false
+          };
+          
+          // 全ルート共通：卒業研究関連イベント
+          const researchEvents = [
+            { id: 'researchPlanFinalization', name: '研究計画ブラッシュアップ', completed: false, type: 'battle',
+              enemy: { name: '研究計画の洗練', hp: 300, maxHP: 300, expReward: 1200, submissionBonus: 30, description: '指導教員との綿密な計画練り直し' } },
+            { id: 'preliminaryExperiment', name: '予備実験・調査', completed: false, type: 'battle',
+              enemy: { name: '予備実験の壁', hp: 250, maxHP: 250, expReward: 1000, submissionBonus: 25, description: '手法確立とデータ収集の困難' } },
+            { id: 'mainResearch', name: '本実験・メイン調査', completed: false, type: 'boss',
+              enemy: { name: '研究の核心', hp: 500, maxHP: 500, expReward: 2500, submissionBonus: 60, description: '最高難易度の研究実施' } },
+            { id: 'dataAnalysis', name: 'データ解析・考察', completed: false, type: 'battle',
+              enemy: { name: '論理的思考の試練', hp: 350, maxHP: 350, expReward: 1500, submissionBonus: 35, description: '客観的な分析と深い考察' } },
+            { id: 'thesisWriting', name: '論文執筆', completed: false, type: 'battle',
+              enemy: { name: '論文執筆の煉獄', hp: 400, maxHP: 400, expReward: 1800, submissionBonus: 40, description: '文章力・構成力・専門知識の総合戦' } },
+            { id: 'graduationPresentation', name: '卒業研究発表会', completed: false, type: 'final_boss',
+              enemy: { name: '卒研発表プレッシャー', hp: 600, maxHP: 600, expReward: 3000, submissionBonus: 75, description: '5年間の学習成果の集大成発表' } }
+          ];
+          
+          // 進路確定イベント
+          const careerEvents = [
+            { id: 'finalCareerDecision', name: '最終進路確定', completed: false, type: 'choice',
+              choices: [
+                { id: 'advanced_course_final', name: '専攻科進学確定', requirements: { theory: 250, submission: 220 }, effect: { theory: 40 } },
+                { id: 'university_transfer_final', name: '大学編入確定', requirements: { theory: 270, submission: 200 }, effect: { theory: 35, submission: 25 } },
+                { id: 'employment_final', name: '就職確定', requirements: { submission: 250, social: 200 }, effect: { submission: 35, social: 30 } }
+              ]
+            },
+            { id: 'careerPreparation', name: '新生活準備', completed: false, type: 'battle',
+              enemy: { name: '人生の転換点', hp: 300, maxHP: 300, expReward: 1200, submissionBonus: 30, description: '新しい環境への準備と心構え' } }
+          ];
+          
+          // 人間関係最終イベント
+          const relationshipEvents = [
+            { id: 'friendshipConsolidation', name: '友情の総仕上げ', completed: false, type: 'battle',
+              enemy: { name: '別れの予感', hp: 200, maxHP: 200, expReward: 800, submissionBonus: 20, description: '卒業を前にした友情の確認' } },
+            { id: 'mentorGratitude', name: '恩師への感謝', completed: false, type: 'battle',
+              enemy: { name: '感謝の表現', hp: 150, maxHP: 150, expReward: 600, submissionBonus: 15, description: '5年間の指導への感謝の気持ち' } },
+            { id: 'loveRelationshipFinal', name: '恋愛関係の最終決着', completed: false, type: 'battle',
+              enemy: { name: '将来への約束', hp: 250, maxHP: 250, expReward: 1000, submissionBonus: 25, description: '卒業後の関係についての最終決断' } }
+          ];
+          
+          // 卒業式・最終イベント
+          const graduationEvents = [
+            { id: 'graduationCeremony', name: '卒業式典', completed: false, type: 'ceremony',
+              description: '5年間の高専生活の集大成' },
+            { id: 'newLifeDeclaration', name: '新生活への決意表明', completed: false, type: 'declaration',
+              description: '選択した道への最終意思確認' },
+            { id: 'socialDoorway', name: '社会人への扉', completed: false, type: 'final_boss',
+              enemy: { name: '大人への階段', hp: 800, maxHP: 800, expReward: 4000, submissionBonus: 100, description: '真の大人として社会に出る準備の完成' } }
+          ];
+          
+          this.chapterEvents = [...researchEvents, ...careerEvents, ...relationshipEvents, ...graduationEvents];
+        } else {
+          this.chapterGoals = {};
+          this.chapterEvents = [];
+        }
+        break;
+      case 6:
+        // 第6章：アフターストーリー・新たな人生の始まり
+        if (this.isFeatureEnabled('chapter6')) {
+          this.chapterGoals = {
+            requiredCredits: 20,
+            specialRequirement: '新環境での確立',
+            careerPath: this.finalPath || 'unknown',
+            relationshipStatus: null
+          };
+          
+          // 進路に応じた異なるイベント構成
+          if (this.finalPath === 'advanced_course' || this.finalPath === 'graduate_school') {
+            // 専攻科・大学院ルート
+            this.chapterEvents = [
+              { id: 'graduateOrientation', name: '大学院生活開始', completed: false, type: 'intro' },
+              { id: 'advancedResearch', name: '高度研究プロジェクト', completed: false, type: 'battle',
+                enemy: { name: '修士研究課題', hp: 400, maxHP: 400, expReward: 1500, submissionBonus: 35, description: '国際レベルの研究に挑戦' } },
+              { id: 'internationalConference', name: '国際学会発表', completed: false, type: 'battle',
+                enemy: { name: '国際学会発表', hp: 350, maxHP: 350, expReward: 1200, submissionBonus: 30, description: '英語力とプレゼン力の集大成' } },
+              { id: 'careerDecision', name: '博士課程 vs 就職選択', completed: false, type: 'choice',
+                choices: [
+                  { id: 'phd_course', name: '博士課程進学', requirements: { theory: 280, submission: 250 } },
+                  { id: 'research_job', name: '企業研究職', requirements: { submission: 280, social: 200 } },
+                  { id: 'academic_job', name: '大学教員・研究者', requirements: { theory: 300, submission: 260 } }
+                ]
+              }
+            ];
+          } else if (this.finalPath === 'employment' || this.finalPath === 'corporate_job') {
+            // 就職ルート
+            this.chapterEvents = [
+              { id: 'corporateOrientation', name: '新入社員研修', completed: false, type: 'intro' },
+              { id: 'firstProject', name: '初の担当プロジェクト', completed: false, type: 'battle',
+                enemy: { name: '新人プロジェクト', hp: 300, maxHP: 300, expReward: 1000, submissionBonus: 25, description: '社会人としての責任ある仕事' } },
+              { id: 'teamLeadership', name: 'チームリーダー挑戦', completed: false, type: 'battle',
+                enemy: { name: 'プロジェクト管理', hp: 450, maxHP: 450, expReward: 1800, submissionBonus: 40, description: 'リーダーシップと管理能力が試される' } },
+              { id: 'promotionPath', name: '昇進・キャリアパス選択', completed: false, type: 'choice',
+                choices: [
+                  { id: 'technical_specialist', name: '技術スペシャリスト', requirements: { submission: 300, theory: 250 } },
+                  { id: 'management_track', name: '管理職トラック', requirements: { social: 280, submission: 240 } },
+                  { id: 'entrepreneur', name: '起業・独立', requirements: { submission: 260, social: 260, theory: 200 } }
+                ]
+              }
+            ];
+          } else {
+            // 汎用ルート
+            this.chapterEvents = [
+              { id: 'newLifeStart', name: '新生活スタート', completed: false, type: 'intro' },
+              { id: 'lifeChallenge', name: '人生の挑戦', completed: false, type: 'battle',
+                enemy: { name: '大人の責任', hp: 350, maxHP: 350, expReward: 1200, submissionBonus: 30, description: '真の大人としての試練' } }
+            ];
+          }
+        } else {
+          this.chapterGoals = {};
+          this.chapterEvents = [];
+        }
+        break;
+      case 7:
+        // 第7章：社会人中堅・専門性確立
+        if (this.isFeatureEnabled('chapter7')) {
+          this.chapterGoals = {
+            requiredCredits: 25,
+            specialRequirement: '専門分野での確立',
+            expertiseLevel: 0,
+            mentoringCount: 0
           };
           this.chapterEvents = [
-            { id: 'universityOrientation', name: '大学入学ガイダンス', completed: false, type: 'intro' },
-            { id: 'majorSelection', name: '専攻選択', completed: false, type: 'choice',
-              choices: [
-                { id: 'computer_science', name: '情報工学', requirements: { theory: 180 }, effect: { theory: 30 } },
-                { id: 'mechanical_eng', name: '機械工学', requirements: { submission: 180 }, effect: { submission: 30 } },
-                { id: 'electrical_eng', name: '電気電子工学', requirements: { theory: 150, submission: 150 }, effect: { theory: 20, submission: 20 } }
-              ]
-            },
-            { id: 'researchLab', name: '研究室配属', completed: false, type: 'choice',
-              choices: [
-                { id: 'ai_research', name: 'AI研究室', requirements: { theory: 200 }, effect: { theory: 35 } },
-                { id: 'robotics_research', name: 'ロボティクス研究室', requirements: { submission: 200 }, effect: { submission: 35 } },
-                { id: 'system_research', name: 'システム工学研究室', requirements: { social: 150 }, effect: { social: 25 } }
-              ]
-            },
-            { id: 'undergraduateThesis', name: '卒業研究', completed: false, type: 'battle',
-              enemy: { name: '卒業論文', hp: 350, maxHP: 350, expReward: 1200, submissionBonus: 30, description: '4年間の集大成となる研究課題' } },
-            { id: 'graduationDecision', name: '卒業後進路決定', completed: false, type: 'choice',
-              choices: [
-                { id: 'graduate_school', name: '大学院進学', requirements: { theory: 220, submission: 200 } },
-                { id: 'corporate_job', name: '一般企業就職', requirements: { submission: 200, social: 180 } },
-                { id: 'research_institute', name: '研究機関就職', requirements: { theory: 250, submission: 180 } }
-              ]
-            }
+            { id: 'expertiseDevelopment', name: '専門性の深化', completed: false, type: 'battle',
+              enemy: { name: '専門技術の壁', hp: 500, maxHP: 500, expReward: 2000, submissionBonus: 50, description: '真の専門家になるための試練' } },
+            { id: 'mentoringJuniors', name: '後輩指導・メンタリング', completed: false, type: 'battle',
+              enemy: { name: '指導責任', hp: 400, maxHP: 400, expReward: 1500, submissionBonus: 35, description: '次世代を育てる責任' } },
+            { id: 'industryRecognition', name: '業界での認知獲得', completed: false, type: 'battle',
+              enemy: { name: '業界での評価', hp: 600, maxHP: 600, expReward: 2500, submissionBonus: 60, description: '業界のエキスパートとしての認知' } },
+            { id: 'lifeBalance', name: '仕事と人生のバランス', completed: false, type: 'battle',
+              enemy: { name: 'ワークライフバランス', hp: 450, maxHP: 450, expReward: 1800, submissionBonus: 40, description: '充実した人生の実現' } }
+          ];
+        } else {
+          this.chapterGoals = {};
+          this.chapterEvents = [];
+        }
+        break;
+      case 8:
+        // 第8章：真の大人・人生の完成
+        if (this.isFeatureEnabled('chapter8')) {
+          this.chapterGoals = {
+            requiredCredits: 30,
+            specialRequirement: '人生の完成形',
+            lifeAchievement: 0,
+            socialContribution: 0
+          };
+          this.chapterEvents = [
+            { id: 'lifePhilosophy', name: '人生哲学の確立', completed: false, type: 'battle',
+              enemy: { name: '人生の意味', hp: 700, maxHP: 700, expReward: 3000, submissionBonus: 75, description: '自分なりの人生観の確立' } },
+            { id: 'socialContribution', name: '社会への貢献', completed: false, type: 'battle',
+              enemy: { name: '社会貢献の責任', hp: 600, maxHP: 600, expReward: 2500, submissionBonus: 60, description: '社会に価値を提供する責任' } },
+            { id: 'legacyCreation', name: '次世代への遺産', completed: false, type: 'battle',
+              enemy: { name: '未来への責任', hp: 800, maxHP: 800, expReward: 4000, submissionBonus: 100, description: '次世代に何を残すかの選択' } },
+            { id: 'trueAdulthood', name: '真の大人への到達', completed: false, type: 'final_boss',
+              enemy: { name: '人生の完成', hp: 1000, maxHP: 1000, expReward: 5000, submissionBonus: 150, description: '真の大人として完成した人格' } }
           ];
         } else {
           this.chapterGoals = {};
@@ -1376,7 +1514,10 @@ class GameState {
       featureFlags: {
         chapter3: this.isFeatureEnabled('chapter3'),
         chapter4: this.isFeatureEnabled('chapter4'),
-        chapter5: this.isFeatureEnabled('chapter5')
+        chapter5: this.isFeatureEnabled('chapter5'),
+        chapter6: this.isFeatureEnabled('chapter6'),
+        chapter7: this.isFeatureEnabled('chapter7'),
+        chapter8: this.isFeatureEnabled('chapter8')
       },
       pathAvailability: {
         chapter3: this.isFeatureEnabled('chapter3'),
@@ -1442,7 +1583,7 @@ class GameState {
 
     // 次章が存在するかチェック
     const nextChapter = this.currentChapter + 1;
-    const availableChapters = [1, 2, 3, 4, 5]; // 基本的に利用可能な章
+    const availableChapters = [1, 2, 3, 4, 5, 6, 7, 8]; // 基本的に利用可能な章
       // 第4章は進路選択が必要
       if (this.playerPath === 'kosen' || this.playerPath === 'university') {
         availableChapters.push(4);
@@ -1458,7 +1599,10 @@ class GameState {
       const featureStatus = {
         3: this.isFeatureEnabled('chapter3') ? '有効' : '無効',
         4: this.isFeatureEnabled('chapter4') ? '有効' : '無効', 
-        5: this.isFeatureEnabled('chapter5') ? '有効' : '無効'
+        5: this.isFeatureEnabled('chapter5') ? '有効' : '無効',
+        6: this.isFeatureEnabled('chapter6') ? '有効' : '無効',
+        7: this.isFeatureEnabled('chapter7') ? '有効' : '無効',
+        8: this.isFeatureEnabled('chapter8') ? '有効' : '無効'
       };
       
       return { 
@@ -1472,8 +1616,11 @@ class GameState {
       1: { exp: 500, money: 2000, maxHP: 20, maxSP: 30 },
       2: { exp: 800, money: 3500, maxHP: 30, maxSP: 40 },
       3: { exp: 900, money: 4000, maxHP: 60, maxSP: 48 },
-      4: { exp: 1000, money: 4500, maxHP: 80, maxSP: 64 },
-      5: { exp: 1200, money: 5000, maxHP: 100, maxSP: 76 }
+      4: { exp: 1200, money: 5000, maxHP: 80, maxSP: 64 },
+      5: { exp: 1500, money: 6000, maxHP: 100, maxSP: 80 },
+      6: { exp: 2000, money: 8000, maxHP: 120, maxSP: 100 },
+      7: { exp: 2500, money: 10000, maxHP: 150, maxSP: 120 },
+      8: { exp: 3000, money: 15000, maxHP: 200, maxSP: 150 }
     };
 
     const bonus = chapterBonus[this.currentChapter];
@@ -1481,6 +1628,14 @@ class GameState {
       this.gainExperience(bonus.exp);
       this.changeStats(bonus);
       this.playerStats.money += bonus.money;
+    }
+
+    // 最大章数チェック
+    if (nextChapter > 8) {
+      return { 
+        success: false, 
+        message: `ゲームクリアおめでとうございます！第8章で物語は完結しました。` 
+      };
     }
 
     // 次章初期化

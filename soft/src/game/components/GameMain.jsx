@@ -179,7 +179,7 @@ export default function GameMain() {
           gameState.endBattle(result, rewards);
           
           // 現在のイベントを完了
-          if (currentEvent && (currentEvent.type === 'battle' || currentEvent.type === 'boss' || currentEvent.type === 'final-boss')) {
+          if (currentEvent && (currentEvent.type === 'battle' || currentEvent.type === 'boss' || currentEvent.type === 'final-boss' || currentEvent.type === 'final_boss')) {
             console.log('event end:', currentEvent.id);
             console.log('befor state:', currentEvent);
             gameState.completeChapterEvent(currentEvent.id);
@@ -396,7 +396,47 @@ export default function GameMain() {
       }
     }
     
-    if (currentEvent.type === 'battle' || currentEvent.type === 'boss' || currentEvent.type === 'final-boss') {
+      // 特別なイベントタイプの処理
+      if (currentEvent.type === 'ceremony') {
+        // 式典イベントの処理
+        gameState.completeChapterEvent(currentEvent.id);
+        const ceremonyReward = { exp: 200, money: 1000 };
+        gameState.gainExperience(ceremonyReward.exp);
+        gameState.playerStats.money += ceremonyReward.money;
+        
+        setActionMessage(`🎓 ${currentEvent.name}に参加しました。\n感動的な式典でした。\n経験値+${ceremonyReward.exp}、所持金+${ceremonyReward.money}円獲得！`);
+        
+        setEventLogs(prev => [...prev, {
+          id: prev.length + 1,
+          message: `🎓 ${currentEvent.name}完了`,
+          timestamp: Date.now()
+        }]);
+        
+        refresh();
+        return;
+      }
+      
+      if (currentEvent.type === 'declaration') {
+        // 決意表明イベントの処理
+        gameState.completeChapterEvent(currentEvent.id);
+        const declarationReward = { exp: 150, motivation: 20 };
+        gameState.gainExperience(declarationReward.exp);
+        gameState.playerStats.motivation = Math.min(100, (gameState.playerStats.motivation || 50) + declarationReward.motivation);
+        
+        setActionMessage(`✨ ${currentEvent.name}を行いました。\n新たな決意を固めました！\n経験値+${declarationReward.exp}、モチベーション+${declarationReward.motivation}獲得！`);
+        
+        setEventLogs(prev => [...prev, {
+          id: prev.length + 1,
+          message: `✨ ${currentEvent.name}完了`,
+          timestamp: Date.now()
+        }]);
+        
+        refresh();
+        return;
+      }
+
+      // 戦闘イベントの処理
+      if (currentEvent.type === 'battle' || currentEvent.type === 'boss' || currentEvent.type === 'final-boss' || currentEvent.type === 'final_boss') {
       // バトル開始
       gameState.startBattle(currentEvent.enemy);
       refresh();
@@ -773,7 +813,9 @@ export default function GameMain() {
                     }}
                   >
                     {currentEvent.id === 'finalExam' ? '🔥 期末試験に挑戦' :
-                     (currentEvent.type === 'battle' || currentEvent.type === 'boss' ? '⚔️ 戦闘開始' : '✨ イベント開始')}
+                     (currentEvent.type === 'battle' || currentEvent.type === 'boss' || currentEvent.type === 'final_boss' ? '⚔️ 戦闘開始' : 
+                      currentEvent.type === 'ceremony' ? '🎓 式典参加' :
+                      currentEvent.type === 'declaration' ? '✨ 決意表明' : '✨ イベント開始')}
                   </button>
                 </div>
               )}
@@ -1833,6 +1875,9 @@ export default function GameMain() {
                               <li>第3章: {debugInfo.featureFlags.chapter3 ? '✅ 有効' : '❌ 無効'}</li>
                               <li>第4章: {debugInfo.featureFlags.chapter4 ? '✅ 有効' : '❌ 無効'}</li>
                               <li>第5章: {debugInfo.featureFlags.chapter5 ? '✅ 有効' : '❌ 無効'}</li>
+                              <li>第6章: {debugInfo.featureFlags.chapter6 ? '✅ 有効' : '❌ 無効'}</li>
+                              <li>第7章: {debugInfo.featureFlags.chapter7 ? '✅ 有効' : '❌ 無効'}</li>
+                              <li>第8章: {debugInfo.featureFlags.chapter8 ? '✅ 有効' : '❌ 無効'}</li>
                             </ul>
                           </div>
                           <div style={{ marginTop: '0.5rem' }}>
