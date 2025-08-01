@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+//import metadate from './layout';
 import GameMain from '../game/components/GameMain';
 
 export default function GamePage() {

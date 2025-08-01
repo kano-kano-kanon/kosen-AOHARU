@@ -122,12 +122,22 @@ export default function TitleScreen({ onStart }) {
           onMouseLeave={(e) => {
             e.target.style.transform = 'scale(1)';
             e.target.style.boxShadow = '0 4px 15px rgba(66, 153, 225, 0.4)';
-          }}
-        >
-          🎮 ゲームスタート
-        </button>
+            }}
+          >
+            <img
+            src="/favicon.ico"
+            alt="ゲームアイコン"
+            style={{
+              width: '1.5rem',
+              height: '1.5rem',
+              verticalAlign: 'middle',
+              marginRight: '0.5rem'
+            }}
+            />
+            ゲームスタート
+          </button>
 
-        {/* バージョン情報 */}
+          {/* バージョン情報 */}
         <div style={{
           marginTop: '2rem',
           fontSize: '0.8rem',
