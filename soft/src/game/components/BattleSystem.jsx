@@ -99,7 +99,7 @@ export default function BattleSystem({ onBattleEnd, enemy, playerStats }) {
         setBattleState(newState);
         
         if (onBattleEnd) {
-          console.log('win.onBattleEnd.call');
+          //console.log('win.onBattleEnd.call');
           const expBonus = newState.isFinalExam ? newState.round * 50 : 0; // 期末試験はラウンドボーナス
           onBattleEnd('victory', {
             exp: (enemy?.expReward || 50) + expBonus,

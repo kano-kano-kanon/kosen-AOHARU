@@ -1,6 +1,9 @@
 /**ゲーム状態管理クラス
  * 設計資料に基づくステータス・好感度システムの実装*/
 
+// NPCデータのインポート
+const npcData = require('../date/npcDate.js');
+
 class GameState {
   constructor() {
     // プレイヤーステータス
@@ -18,48 +21,19 @@ class GameState {
       maxSP: 100         // 最大SP
     };
 
-        this.npcs = {
-      '赤峰教授': {
-        name: '赤峰教授',
-        affection: 8,      
-        maxAffection: 128,
-        category: 'professor',
-        skills: ['教授の機嫌を読む'],
-        description: '温厚だが期限には厳しい教授'
-      },
-      '真田翔': {
-        name: '真田翔',
-        affection: 10,
-        maxAffection: 128,
-        category: 'classmate',
-        skills: ['提出力サポート'],
-        description: '陽気でムードメーカーなクラスメイト'
-      },
-      '美濃玲': {
-        name: '美濃玲',
-        affection: 6,
-        maxAffection: 128,
-        category: 'senior',
-        skills: ['回路解読'],
-        description: 'クールな工学系先輩'
-      },
-      '佐伯美和': {
-        name: '佐伯美和',
-        affection: 4,
-        maxAffection: 128,
-        category: 'romantic',
-        skills: ['後輩サポート要請'],
-        description: '穏やかで努力家'
-      },
-      '七海美月': {
-        name: '七海美月',
-        affection: 12,
-        maxAffection: 128,
-        category: 'romantic',
-        skills: ['応援'],
-        description: '活発で明るい性格'
-      }
-    };
+    // NPCデータの初期化（npcDate.jsから読み込み）
+    this.npcs = {};
+    npcData.forEach(npc => {
+      this.npcs[npc.name] = {
+        name: npc.name,
+        affection: npc.affection,
+        maxAffection: npc.maxAffection,
+        category: npc.category,
+        skills: [...npc.skills], // 配列のコピー
+        description: npc.description,
+        icon: npc.icon // アイコン情報を追加
+      };
+    });
 
     // ゲーム進行状態
     this.gamePhase = 'daily';  // daily, action, battle, evaluation
@@ -117,9 +91,9 @@ class GameState {
     };
     
     // バージョン管理
-    this.gameVersion = '2.0.1';
-    this.dataVersion = '2.0.1';
-    
+    this.gameVersion = '3.0.0';
+    this.dataVersion = '3.0.0';
+
     // 新機能のデータ構造（まだコメントアウト状態）
     this.skills = [];              // プレイヤースキル詳細
     this.inventory = [];           // アイテムインベントリ
@@ -152,7 +126,7 @@ class GameState {
       adminSessions: new Set(),
       securityLogs: [],
       //maxSessions: 100, // 最大同時接続数
-      sessionTimeout: 30 * 60 * 1000, // 30分でタイムアウト
+      //sessionTimeout: 30 * 60 * 1000, // 30分でタイムアウト
       suspiciousThreshold: 5 // 不正行為の閾値
     };
     
@@ -168,7 +142,7 @@ class GameState {
         price: 150,
         effect: { sp: 20 },
         category: 'consumable',
-        icon: '⚡'
+        icon: '/0203020016.png'
       },
       {
         id: 'health_food',
@@ -177,7 +151,7 @@ class GameState {
         price: 200,
         effect: { hp: 25 },
         category: 'consumable',
-        icon: '🥗'
+        icon: '/food_i.png'
       },
       {
         id: 'stress_relief',
@@ -195,7 +169,7 @@ class GameState {
         price: 500,
         effect: { theory: 2 },
         category: 'upgrade',
-        icon: '📚'
+        icon: '/as_lv0.png'
       },
       {
         id: 'presentation_kit',
@@ -231,7 +205,7 @@ class GameState {
         price: 1500,
         effect: { theory: 10, submission: 10 },
         category: 'rare',
-        icon: '🖋'
+        icon: '/mannnenn.png'
       }
     ];
     this.purchasedItems = []; // 購入履歴
@@ -260,12 +234,12 @@ class GameState {
         // 保存から1時間以内なら自動復元
         if (Date.now() - saveData.savedAt < 3600000) {
           this.loadData(saveData); // 実際にデータをロード
-          console.log('オートセーブから進行状況を復元しました');
+          //console.log('オートセーブから進行状況を復元しました');
           return true;
         }
       }
     } catch (error) {
-      console.log('オートロード実行中にエラー:', error);
+      //console.log('オートロード実行中にエラー:', error);
     }
     return false;
   }
@@ -284,7 +258,7 @@ class GameState {
     
     if (featureName in this.featureFlags) {
       this.featureFlags[featureName] = enabled !== null ? enabled : !this.featureFlags[featureName];
-      console.log(`機能フラグ ${featureName} を ${this.featureFlags[featureName] ? '有効' : '無効'} にしました`);
+      //console.log(`機能フラグ ${featureName} を ${this.featureFlags[featureName] ? '有効' : '無効'} にしました`);
       return true;
     }
     
@@ -337,14 +311,14 @@ class GameState {
     if (dependencies[featureName]) {
       for (const dep of dependencies[featureName]) {
         if (!this.featureFlags[dep]) {
-          console.warn(`機能 ${featureName} には ${dep} が必要です`);
+          //console.warn(`機能 ${featureName} には ${dep} が必要です`);
           return false;
         }
       }
     }
 
     this.featureFlags[featureName] = true;
-    console.log(`機能 ${featureName} を安全に有効化しました`);
+    //console.log(`機能 ${featureName} を安全に有効化しました`);
     return true;
   }
 
@@ -411,7 +385,7 @@ class GameState {
     const eventKey = `${npcName}_affection_${threshold}`;
     this.flags.add(eventKey);
     
-    console.log(`${npcName}との好感度が${threshold}に到達しました！`);
+    //console.log(`${npcName}との好感度が${threshold}に到達しました！`);
     
     // 特定のスキルやボーナス解放
     switch (threshold) {
@@ -497,8 +471,8 @@ class GameState {
     // ステータス上昇
     this.changeStats(levelUpBonus);
 
-    console.log(`レベルアップ！ Lv.${this.playerStats.level} になりました！`);
-    
+    //const message = `レベルアップ！ Lv.${this.playerStats.level} になりました！`;
+
     // 経験値をリセット
     this.playerStats.experience = 0;
   }
@@ -604,7 +578,7 @@ class GameState {
       }
     } catch (error) {
       // オートセーブ失敗してもゲームは続行
-      console.log('オートセーブでエラーが発生しましたが、ゲームは続行します');
+      //console.log('オートセーブでエラーが発生しましたが、ゲームは続行します');
     }
   }
 
@@ -695,21 +669,21 @@ class GameState {
     
     // chapterEventsまたはchapterGoalsが存在しない場合、現在の章で再初期化
     if (!this.chapterEvents || !this.chapterGoals || Object.keys(this.chapterGoals).length === 0) {
-      console.log('章データが不完全なため再初期化します');
+      //console.log('章データが不完全なため再初期化します');
       this.initializeChapter(this.currentChapter);
     }
   }
 
   // 機能フラグのアップグレード処理
   upgradeFeatureFlags() {
-    console.log('機能フラグを最新のデフォルト設定に更新中...');
+    //console.log('機能フラグを最新のデフォルト設定に更新中...');
     
     // 通常機能を有効化（チート系は除く）
     const normalFeatures = [
       'chapter1', 'chapter2', 'chapter3', 'chapter4', 'chapter5', 'chapter6', 'chapter7', 'chapter8',
       'basicBattle', 'basicShop', 'basicNPCInteraction',
       'skillSystem', 'gachaSystem', 'npcEvents', 
-      'extendedItems', 'extendedEnemies', 'playerChat', 
+      'extendedItems', 'extendedEnemies', //'playerChat', 
       'tutorialLogs', 'advancedBattle', 'randomEvents', 
       'achievementSystem', 'superRareItems'
     ];
@@ -720,7 +694,7 @@ class GameState {
       }
     });
     
-    console.log('機能フラグのアップグレード完了');
+    //console.log('機能フラグのアップグレード完了');
     
     // アップグレード後すぐにセーブ
     this.performAutoSave();
@@ -761,7 +735,7 @@ class GameState {
           requiredCredits: 5,
           maxStress: 70,
           targetNPCs: ['美濃玲', '真田翔'],
-          specialRequirement: 'NPC好感度64以上を2人'
+          specialRequirement: '真田翔と美濃玲の好感度64以上'
         };
         this.chapterEvents = [
           { id: 'secondYearStart', name: '2年生開始', completed: false, type: 'intro' },
@@ -862,7 +836,7 @@ class GameState {
                 choices: [
                   { id: 'top_national', name: '最難関国立大学', requirements: { theory: 220, submission: 180 }, effect: { theory: 35, social: 10 } },
                   { id: 'engineering_focused', name: '工科系名門大学', requirements: { theory: 200, submission: 200 }, effect: { submission: 35, theory: 15 } },
-                  { id: 'balanced_university', name: 'バランス型大学', requirements: { theory: 180, submission: 180, social: 150 }, effect: { theory: 20, submission: 20, social: 20 } }
+                  { id: 'balanced_university', name: '中堅大学', requirements: { theory: 180, submission: 180, social: 150 }, effect: { theory: 20, submission: 20, social: 20 } }
                 ]
               },
               { id: 'transferExamPrep', name: '編入試験集中対策', completed: false, type: 'battle',
@@ -874,8 +848,8 @@ class GameState {
             // 就職ルート
             this.chapterEvents = [
               ...commonEvents,
-              { id: 'companyResearch', name: '企業研究・エントリー', completed: false, type: 'battle',
-                enemy: { name: 'ES大量作成', hp: 200, maxHP: 200, expReward: 800, submissionBonus: 20, description: '10社分のES作成マラソン' } },
+              { id: 'companyResearch', name: '企業研究・面接', completed: false, type: 'battle',
+                enemy: { name: '面接官', hp: 200, maxHP: 200, expReward: 800, submissionBonus: 20, description: '10社分のES作成マラソン' } },
               { id: 'internshipParticipation', name: 'インターンシップ参加', completed: false, type: 'battle',
                 enemy: { name: 'インターン課題', hp: 280, maxHP: 280, expReward: 1200, submissionBonus: 30, description: '実際の業務体験での成果発揮' } },
               { id: 'jobInterviews', name: '就職活動本格化', completed: false, type: 'boss',
@@ -930,11 +904,11 @@ class GameState {
           // 人間関係最終イベント
           const relationshipEvents = [
             { id: 'friendshipConsolidation', name: '友情の総仕上げ', completed: false, type: 'battle',
-              enemy: { name: '別れの予感', hp: 200, maxHP: 200, expReward: 800, submissionBonus: 20, description: '卒業を前にした友情の確認' } },
+              enemy: { name: '別れの予感', hp: 280, maxHP: 280, expReward: 800, submissionBonus: 20, description: '卒業を前にした友情の確認' } },
             { id: 'mentorGratitude', name: '恩師への感謝', completed: false, type: 'battle',
-              enemy: { name: '感謝の表現', hp: 150, maxHP: 150, expReward: 600, submissionBonus: 15, description: '5年間の指導への感謝の気持ち' } },
+              enemy: { name: '感謝の表現', hp: 280, maxHP: 280, expReward: 600, submissionBonus: 15, description: '5年間の指導への感謝の気持ち' } },
             { id: 'loveRelationshipFinal', name: '恋愛関係の最終決着', completed: false, type: 'battle',
-              enemy: { name: '将来への約束', hp: 250, maxHP: 250, expReward: 1000, submissionBonus: 25, description: '卒業後の関係についての最終決断' } }
+              enemy: { name: '将来への約束', hp: 300, maxHP: 300, expReward: 1000, submissionBonus: 25, description: '卒業後の関係についての最終決断' } }
           ];
           
           // 卒業式・最終イベント
@@ -1046,11 +1020,11 @@ class GameState {
             { id: 'lifePhilosophy', name: '人生哲学の確立', completed: false, type: 'battle',
               enemy: { name: '人生の意味', hp: 700, maxHP: 700, expReward: 3000, submissionBonus: 75, description: '自分なりの人生観の確立' } },
             { id: 'socialContribution', name: '社会への貢献', completed: false, type: 'battle',
-              enemy: { name: '社会貢献の責任', hp: 600, maxHP: 600, expReward: 2500, submissionBonus: 60, description: '社会に価値を提供する責任' } },
+              enemy: { name: '社会貢献の責任', hp: 900, maxHP: 900, expReward: 2500, submissionBonus: 60, description: '社会に価値を提供する責任' } },
             { id: 'legacyCreation', name: '次世代への遺産', completed: false, type: 'battle',
-              enemy: { name: '未来への責任', hp: 800, maxHP: 800, expReward: 4000, submissionBonus: 100, description: '次世代に何を残すかの選択' } },
+              enemy: { name: '未来への責任', hp: 1000, maxHP: 1000, expReward: 4000, submissionBonus: 100, description: '次世代に何を残すかの選択' } },
             { id: 'trueAdulthood', name: '真の大人への到達', completed: false, type: 'final_boss',
-              enemy: { name: '人生の完成', hp: 1000, maxHP: 1000, expReward: 5000, submissionBonus: 150, description: '真の大人として完成した人格' } }
+              enemy: { name: '人生の完成', hp: 1200, maxHP: 1200, expReward: 5000, submissionBonus: 150, description: '真の大人として完成した人格' } }
           ];
         } else {
           this.chapterGoals = {};
@@ -1067,13 +1041,13 @@ class GameState {
   // 章イベント進行
   getCurrentChapterEvent() {
     if (!this.chapterEvents) {
-      console.log('getCurrentChapterEvent: chapterEventsが存在しません');
+      // console.log('getCurrentChapterEvent: chapterEventsが存在しません');
       return null;
     }
     
     const uncompletedEvent = this.chapterEvents.find(event => !event.completed);
-    console.log('getCurrentChapterEvent: 未完了イベント検索結果:', uncompletedEvent?.id || 'なし');
-    console.log('全イベント状態:', this.chapterEvents.map(e => ({ id: e.id, completed: e.completed })));
+//    console.log('getCurrentChapterEvent: 未完了イベント検索結果:', uncompletedEvent?.id || 'なし');
+//    console.log('全イベント状態:', this.chapterEvents.map(e => ({ id: e.id, completed: e.completed })));
     
     return uncompletedEvent;
   }
@@ -1112,17 +1086,17 @@ class GameState {
   // 章イベント完了
   completeChapterEvent(eventId) {
     if (!this.chapterEvents) {
-      console.log('警告: chapterEventsが存在しません');
+//      console.log('警告: chapterEventsが存在しません');
       return;
     }
     const event = this.chapterEvents.find(e => e.id === eventId);
     if (event) {
-      console.log(`イベント完了処理: ${eventId}, 前の状態: completed=${event.completed}`);
+//      console.log(`イベント完了処理: ${eventId}, 前の状態: completed=${event.completed}`);
       event.completed = true;
       this.chapterProgress++;
-      console.log(`イベント完了後: completed=${event.completed}, chapterProgress=${this.chapterProgress}`);
+//      console.log(`イベント完了後: completed=${event.completed}, chapterProgress=${this.chapterProgress}`);
     } else {
-      console.log(`警告: イベント ${eventId} が見つかりません`);
+//      console.log(`警告: イベント ${eventId} が見つかりません`);
     }
   }
 
@@ -1255,7 +1229,7 @@ class GameState {
     try {
       const savedData = localStorage.getItem(`kosenRPG_save_${slotName}`);
       if (!savedData) {
-        console.log(`スロット "${slotName}" にセーブデータが見つかりません`);
+//        console.log(`スロット "${slotName}" にセーブデータが見つかりません`);
         return false;
       }
       
@@ -1267,10 +1241,10 @@ class GameState {
         this.initializeChapter(this.currentChapter);
       }
       
-      console.log(`スロット "${slotName}" からゲームデータを読み込みました`);
+//      console.log(`スロット "${slotName}" からゲームデータを読み込みました`);
       return true;
     } catch (error) {
-      console.error('ロードに失敗しました:', error);
+      console.error('road faild:', error);
       return false;
     }
   }
@@ -1309,10 +1283,10 @@ class GameState {
   static deleteSaveData(slotName) {
     try {
       localStorage.removeItem(`kosenRPG_save_${slotName}`);
-      console.log(`スロット "${slotName}" のセーブデータを削除しました`);
+//      console.log(`スロット "${slotName}" のセーブデータを削除しました`);
       return true;
     } catch (error) {
-      console.error('セーブデータ削除に失敗しました:', error);
+//      console.error('セーブデータ削除に失敗しました:', error);
       return false;
     }
   }
@@ -1365,7 +1339,7 @@ class GameState {
     return true;
   }
 
-  // チート機能: 全章イベント完了
+  // チート機能: 章イベント完了
   cheatCompleteAllEvents() {
     if (!this.isAdmin) return false;
     
@@ -1378,7 +1352,6 @@ class GameState {
     return true;
   }
 
-  // チート機能: 全NPC好感度最大
   cheatMaxAffection() {
     if (!this.isAdmin) return false;
     
@@ -2463,7 +2436,7 @@ class GameState {
       // 動的インポートではなく、直接データを使用
       const gachaItemTables = {
         normal: [
-          { name: 'エナジードリンク', rarity: 'common', effect: { sp: 20 }, probability: 50 },
+          { name: 'エナジードリンク', rarity: 'common', effect: { sp: 20 }, probability: 50, icon: '/0203020016.png' },
           { name: '栄養食品', rarity: 'common', effect: { hp: 25 }, probability: 30 },
           { name: '参考書', rarity: 'rare', effect: { theory: 3 }, probability: 15 },
           { name: 'プレゼンキット', rarity: 'rare', effect: { social: 3 }, probability: 5 }

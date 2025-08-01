@@ -15,7 +15,7 @@ class ProductionServer {
   }
 
   start() {
-    console.log('🚀 本番サーバーを起動しています...');
+    console.log('サーバーを起動しています...');
     
     // Next.jsアプリを起動 (ポート3000)
     this.startNextApp();
@@ -26,13 +26,13 @@ class ProductionServer {
     // プロセス終了時のクリーンアップ
     this.setupCleanup();
     
-    console.log('✅ 全てのサーバーが起動完了しました');
-    console.log('📡 Next.js App: http://localhost:3000');
-    console.log('💬 Chat Server: ws://localhost:3005');
+    console.log('サーバーが起動完了しました');
+    console.log('App: http://localhost:3000');
+    console.log('Chat: ws://localhost:3005');
   }
 
   startNextApp() {
-    console.log('🌐 Next.jsアプリを起動中...');
+    console.log('jsアプリを起動中...');
     const nextProcess = spawn('npm', ['run', 'start'], {
       stdio: 'pipe',
       env: {
@@ -43,7 +43,7 @@ class ProductionServer {
     });
 
     nextProcess.stdout.on('data', (data) => {
-      console.log(`[Next.js] ${data.toString().trim()}`);
+      (`[Next.js] ${data.toString().trim()}`);
     });
 
     nextProcess.stderr.on('data', (data) => {
@@ -62,7 +62,7 @@ class ProductionServer {
   }
 
   startChatServer() {
-    console.log('💬 チャットサーバーを起動中...');
+    ('💬 チャットサーバーを起動中...');
     const chatProcess = spawn('node', ['chat-server.js'], {
       stdio: 'pipe'
     });
@@ -91,7 +91,7 @@ class ProductionServer {
       if (this.isShuttingDown) return;
       this.isShuttingDown = true;
       
-      console.log('\n🛑 サーバーを停止しています...');
+      console.log('\nサーバーを停止しています...');
       
       this.processes.forEach((process, index) => {
         if (process && !process.killed) {

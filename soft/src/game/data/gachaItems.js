@@ -5,7 +5,7 @@
 
 export const gachaItemTables = {
   normal: [
-    { name: 'エナジードリンク', rarity: 'common', effect: { sp: 20 }, probability: 50, icon: '⚡' },
+    { name: 'エナジードリンク', rarity: 'common', effect: { sp: 20 }, probability: 50, icon: '/0203020016.png' },
     { name: '栄養食品', rarity: 'common', effect: { hp: 25 }, probability: 30, icon: '🥗' },
     { name: '参考書', rarity: 'rare', effect: { theory: 3 }, probability: 15, icon: '📚' },
     { name: 'プレゼンキット', rarity: 'rare', effect: { social: 3 }, probability: 5, icon: '🎤' }

@@ -190,14 +190,14 @@ export default function GameMain() {
             
             // 期末試験（final-boss）完了時の特別処理
             if (currentEvent.type === 'final-boss' && result === 'victory') {
-              console.log('期末試験完了！章進行をチェック');
-              
+              //console.log('期末試験完了！章進行をチェック');
+
               // 章完了チェック
               const canAdvance = gameState.canAdvanceToNextChapter();
-              console.log('章進行可能性:', canAdvance);
+              //console.log('章進行可能性:', canAdvance);
               if (canAdvance.canAdvance) {
-                console.log('次章への進行が可能です');
-                
+                //console.log('次章への進行が可能です');
+
                 // 次章進行の確認メッセージを表示
                 setTimeout(() => {
                   const shouldAdvance = confirm('期末試験に合格しました！次の章に進みますか？');
@@ -212,7 +212,7 @@ export default function GameMain() {
                   }
                 }, 1000);
               } else {
-                console.log('章進行要件未達:', canAdvance.message);
+                //console.log('章進行要件未達:', canAdvance.message);
                 setActionMessage(`期末試験は完了しましたが、進級要件が不足しています: ${canAdvance.message}`);
               }
             }
@@ -916,7 +916,19 @@ export default function GameMain() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                       <div style={{ flex: 1 }}>
                         <h4 style={{ margin: 0, color: '#495057', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontSize: '1.5rem' }}>{item.icon}</span>
+                          {item.icon.startsWith('/') ? (
+                            <img 
+                              src={item.icon} 
+                              alt={item.name}
+                              style={{ 
+                                width: '32px', 
+                                height: '32px', 
+                                objectFit: 'contain'
+                              }} 
+                            />
+                          ) : (
+                            <span style={{ fontSize: '1.5rem' }}>{item.icon}</span>
+                          )}
                           {item.name}
                           {item.isPurchased && (
                             <span style={{ 
@@ -1903,7 +1915,7 @@ export default function GameMain() {
                           )}
                           <button
                             onClick={() => {
-                              console.log('章デバッグ情報:', debugInfo);
+                              //console.log('章デバッグ情報:', debugInfo);
                               setActionMessage('章デバッグ情報をコンソールに出力しました');
                               setTimeout(() => setActionMessage(''), 3000);
                             }}

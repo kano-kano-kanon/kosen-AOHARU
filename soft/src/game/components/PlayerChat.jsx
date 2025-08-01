@@ -30,12 +30,12 @@ export default function PlayerChat({ gameState, onActionMessage }) {
     
     const initializeChat = async () => {
       try {
-        console.log('チャットコンポーネント初期化開始');
+        //console.log('チャットコンポーネント初期化開始');
         
         // 初期化タイムアウト設定
         connectionTimeout = setTimeout(() => {
           if (isComponentMounted && connectionStatus === 'connecting') {
-            console.log('チャット初期化タイムアウト - フォールバックモード');
+            //console.log('チャット初期化タイムアウト - フォールバックモード');
             setConnectionStatus('fallback');
             if (onActionMessage) {
               onActionMessage('⚠️ チャットサーバーに接続できませんでした - ローカルモードで動作');
@@ -49,7 +49,7 @@ export default function PlayerChat({ gameState, onActionMessage }) {
         const unsubscribeConnection = chatClient.current.onConnectionChange((status, message) => {
           if (!isComponentMounted) return;
           
-          console.log('接続状態変更:', status, message);
+          //console.log('接続状態変更:', status, message);
           setConnectionStatus(status);
           
           if (status === 'connected') {

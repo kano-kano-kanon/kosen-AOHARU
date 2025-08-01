@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 /**
  * NPCステータス表示コンポーネント
  * 設計資料に基づくNPC好感度システムを実装
  */
 export default function NPCStatus({ npcs, onInteract, playerSP, playerHP, gameState, onNPCEvent }) {
+  const [imageErrors, setImageErrors] = useState({});
+
+  const handleImageError = (npcName) => {
+    setImageErrors(prev => ({ ...prev, [npcName]: true }));
+  };
   const getAffectionLevel = (affection) => {
     if (affection >= 100) return { level: '最高', color: '#d69e2e', icon: '💖' };
     if (affection >= 64) return { level: '親密', color: '#38a169', icon: '💕' };
@@ -43,9 +48,20 @@ export default function NPCStatus({ npcs, onInteract, playerSP, playerHP, gameSt
     return <div>NPCデータを読み込み中...</div>;
   }
 
+  // 一時的なデバッグ：NPCデータの確認
+  /*if (process.env.NODE_ENV === 'development') {
+    console.log('NPCデータ:', npcs);
+    console.log('最初のNPC:', Object.values(npcs)[0]);
+    Object.values(npcs).forEach(npc => {
+      console.log(`${npc.name}: icon = "${npc.icon}"`);
+    });
+  }*/ 
+
   return (
     <div>
       <h3 style={{ marginBottom: '1.5rem', color: '#2d3748' }}>NPC関係図</h3>
+      
+      
       
       <div style={{ 
         display: 'grid', 
@@ -82,12 +98,171 @@ export default function NPCStatus({ npcs, onInteract, playerSP, playerHP, gameSt
 
               {/* NPC情報 */}
               <div style={{ marginBottom: '1rem' }}>
+                {/* NPCアイコン画像 */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  marginBottom: '1rem'
+                }}>
+                  {/* デバッグ情報表示 */}
+                  {/*<div style={{ fontSize: '10px', color: '#666', marginBottom: '5px', textAlign: 'center' }}>
+                    icon: {npc.icon || 'undefined'} | error: {imageErrors[npc.name] ? 'true' : 'false'}
+                  </div>*/}
+                  
+                  {/* 強制的に赤峰教授の画像をテスト */}
+                  {npc.name === '赤峰教授' ? (
+                    <img 
+                      src="/akamine.png"
+                      alt={`${npc.name}のアイコン`}
+                      style={{
+                        width: '100px',
+                        height: '100px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        border: `3px solid ${categoryInfo.color}`,
+                        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                        backgroundColor: '#f7fafc'
+                      }}
+                      onError={() => {
+                        //console.warn(`強制テスト画像失敗: ${npc.name}`);
+                        handleImageError(npc.name);
+                      }}
+                      /*onLoad={() => {
+                        console.log(`強制テスト画像成功: ${npc.name}`);
+                      }}*/
+                    />
+                  ) : npc.name === '真田翔' ? (
+                    <img 
+                      src="/syou.png"
+                      alt={`${npc.name}のアイコン`}
+                      style={{
+                        width: '100px',
+                        height: '100px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        border: `3px solid ${categoryInfo.color}`,
+                        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                        backgroundColor: '#f7fafc'
+                      }}
+                      onError={() => {
+                        //console.warn(`強制テスト画像失敗: ${npc.name}`);
+                        handleImageError(npc.name);
+                      }}
+                      /*onLoad={() => {
+                        console.log(`強制テスト画像成功: ${npc.name}`);
+                      }}*/
+                    />
+                  ) : npc.icon && !imageErrors[npc.name] ? (
+                    <img 
+                      src={npc.icon}
+                      alt={`${npc.name}のアイコン`}
+                      style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        border: `3px solid ${categoryInfo.color}`,
+                        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                        backgroundColor: '#f7fafc'
+                      }}
+                      onError={() => {
+                        console.warn(`画像読み込み失敗: ${npc.name} - ${npc.icon}`);
+                        handleImageError(npc.name);
+                      }}
+                      onLoad={() => {
+                        console.log(`画像読み込み成功: ${npc.name} - ${npc.icon}`);
+                      }}
+                    />
+                  ) : npc.name === '美濃玲' ? (
+                    <img 
+                      src="/rei.png"
+                      alt={`${npc.name}のアイコン`}
+                      style={{
+                        width: '100px',
+                        height: '100px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        border: `3px solid ${categoryInfo.color}`,
+                        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                        backgroundColor: '#f7fafc'
+                      }}
+                      onError={() => {
+                        //console.warn(`強制テスト画像失敗: ${npc.name}`);
+                        handleImageError(npc.name);
+                      }}
+                      /*onLoad={() => {
+                        console.log(`強制テスト画像成功: ${npc.name}`);
+                      }}*/
+                    />
+                  ) :  npc.name === '佐伯美和' ? (
+                    <img 
+                      src="miwa.png"
+                      alt={`${npc.name}のアイコン`}
+                      style={{
+                        width: '100px',
+                        height: '100px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        border: `3px solid ${categoryInfo.color}`,
+                        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                        backgroundColor: '#f7fafc'
+                      }}
+                      onError={() => {
+                        //console.warn(`強制テスト画像失敗: ${npc.name}`);
+                        handleImageError(npc.name);
+                      }}
+                      /*onLoad={() => {
+                        console.log(`強制テスト画像成功: ${npc.name}`);
+                      }}*/
+                    />
+                  ) : npc.name === '七海美月' ? (
+                    <img 
+                      src="nanami.png"
+                      alt={`${npc.name}のアイコン`}
+                      style={{
+                        width: '100px',
+                        height: '100px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        border: `3px solid ${categoryInfo.color}`,
+                        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                        backgroundColor: '#f7fafc'
+                      }}
+                      onError={() => {
+                        //console.warn(`強制テスト画像失敗: ${npc.name}`);
+                        handleImageError(npc.name);
+                      }}
+                      /*onLoad={() => {
+                        console.log(`強制テスト画像成功: ${npc.name}`);
+                      }}*/
+                    />
+                  ) : (
+                    // 画像がない場合またはエラーの場合のデフォルト表示
+                    <div style={{
+                      width: '80px',
+                      height: '80px',
+                      borderRadius: '50%',
+                      backgroundColor: categoryInfo.color,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '2rem',
+                      color: 'white',
+                      border: `3px solid ${categoryInfo.color}`,
+                      boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      {categoryInfo.icon}
+                    </div>
+                  )}
+                </div>
+                
                 <h4 style={{ 
                   margin: '0 0 0.5rem 0', 
                   color: '#2d3748',
                   fontSize: '1.25rem',
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   gap: '0.5rem'
                 }}>
                   {affectionLevel.icon} {npc.name}
